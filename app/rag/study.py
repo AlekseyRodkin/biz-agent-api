@@ -5,6 +5,7 @@ from app.db.supabase_client import get_client
 from app.embeddings.embedder import embed_query
 from app.llm.deepseek_client import chat_completion
 from app.config import USER_ID
+from app.rag.decisions import detect_conflicts, build_conflict_context
 
 
 STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансформация бизнеса с ИИ".
@@ -14,6 +15,10 @@ STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансф
 - Приоритет: решения пользователя (COMPANY_MEMORY) > методология > кейсы
 - Не цитируй лекции дословно, сжато объясняй суть
 - Если есть COMPANY_MEMORY — ссылайся на него
+- КРИТИЧЕСКИ ВАЖНО: если есть PREVIOUS_DECISIONS_TO_CHECK, ОБЯЗАТЕЛЬНО проверь их на расхождения с методологией
+- Ты НЕ ИМЕЕШЬ ПРАВА молча игнорировать потенциальные конфликты
+- Если решение противоречит методологии или пропускает обязательный шаг — укажи это
+- Не навязывай, но фиксируй риски
 
 ФОРМАТ ОТВЕТА (СТРОГО!):
 
@@ -28,6 +33,13 @@ STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансф
 
 [ТВОИ ПРЕДЫДУЩИЕ РЕШЕНИЯ]
 - если есть COMPANY_MEMORY, покажи как это связано
+
+[ВОЗМОЖНЫЕ РАСХОЖДЕНИЯ]
+(Обязательно добавь этот раздел, если есть PREVIOUS_DECISIONS_TO_CHECK и обнаружены расхождения!)
+- По методологии: что говорит текущий блок
+- У тебя принято: что пользователь решил ранее
+- Риск: почему это может быть проблемой
+(Если расхождений нет — напиши "Расхождений не обнаружено")
 
 [ВОПРОС К ТЕБЕ]
 Как ты решил реализовать это в своей компании?
@@ -207,27 +219,33 @@ def update_progress(user_id: str, lecture_id: str, sequence_order: int) -> None:
         }).eq("user_id", user_id).execute()
 
 
-def build_study_context(chunks: list[dict], memory: list[dict], cases: list[dict]) -> str:
+def build_study_context(chunks: list[dict], memory: list[dict], cases: list[dict], conflicts: list[dict] = None) -> str:
     """Build context string for study prompt."""
     parts = []
-    
+
     if chunks:
         parts.append("METHODOLOGY_BLOCK:")
         for c in chunks:
             parts.append(f"[{c['chunk_id']}] {c['content']}\n")
-    
+
     if memory:
         parts.append("\nCOMPANY_MEMORY (твои предыдущие решения):")
         for m in memory:
             topic = m.get('related_topic', '')
             decision = m.get('user_decision_normalized') or m.get('user_decision_raw', '')
             parts.append(f"- [{topic}]: {decision}")
-    
+
     if cases:
         parts.append("\nCASE_STUDIES (примеры):")
         for c in cases:
             parts.append(f"[{c['chunk_id']}] {c['content'][:500]}...\n")
-    
+
+    # Add conflict context for LLM to analyze
+    if conflicts:
+        conflict_context = build_conflict_context(conflicts)
+        if conflict_context:
+            parts.append(conflict_context)
+
     return "\n".join(parts)
 
 
@@ -236,47 +254,51 @@ def study_next(user_id: str) -> dict:
     progress = get_user_progress(user_id)
     if not progress:
         progress = reset_progress(user_id)
-    
+
     chunks = get_next_methodology_chunks(progress)
-    
+
     if not chunks:
         return {
             "answer": "Поздравляю! Вы прошли все доступные материалы курса.",
-            "sources": {"methodology": [], "memory": [], "cases": []},
+            "sources": {"methodology": [], "memory": [], "cases": [], "conflicts": []},
             "progress": progress,
             "completed": True
         }
-    
+
     # Compute embedding for the block
     block_text = " ".join([c["content"] for c in chunks])
     block_embedding = embed_query(block_text[:2000])  # Limit for embedding
-    
+
     # Get relevant memory and cases
     memory = get_relevant_memory(block_embedding, user_id)
     cases = get_case_studies(block_embedding)
-    
+
+    # Detect potential conflicts with previous decisions
+    conflicts = detect_conflicts(block_text, user_id, limit=5)
+
     # Build context and generate response
-    context = build_study_context(chunks, memory, cases)
-    
+    context = build_study_context(chunks, memory, cases, conflicts)
+
     lecture_title = chunks[0].get("parent_topic", "")
-    
+
     messages = [
         {"role": "system", "content": STUDY_SYSTEM_PROMPT},
         {"role": "user", "content": f"Блок: {lecture_title}\n\n{context}"}
     ]
-    
+
     answer = chat_completion(messages)
-    
+
     # Update progress
     last_chunk = chunks[-1]
     update_progress(user_id, last_chunk["lecture_id"], last_chunk["sequence_order"])
-    
+
     return {
         "answer": answer,
         "sources": {
             "methodology": [{"chunk_id": c["chunk_id"], "lecture_id": c["lecture_id"]} for c in chunks],
             "memory": [{"id": str(m.get("id", "")), "topic": m.get("related_topic", "")} for m in memory],
-            "cases": [{"chunk_id": c["chunk_id"]} for c in cases]
+            "cases": [{"chunk_id": c["chunk_id"]} for c in cases],
+            "conflicts": [{"decision_id": c["decision_id"], "topic": c["topic"]} for c in conflicts]
         },
         "progress": get_user_progress(user_id),
         "completed": False

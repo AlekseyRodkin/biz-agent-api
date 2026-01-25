@@ -8,12 +8,13 @@ from typing import Optional
 
 from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, reset_progress, process_user_answer, get_user_progress
+from app.rag.decisions import decisions_review, refine_decision
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="0.5.0"
+    version="0.6.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -34,12 +35,17 @@ class AnswerRequest(BaseModel):
     question: Optional[str] = None
 
 
+class RefineRequest(BaseModel):
+    decision_id: str
+    updated_decision: str
+
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "0.5.0"
+        "version": "0.6.0"
     }
 
 
@@ -98,6 +104,30 @@ async def study_progress_endpoint():
         if not progress:
             return {"status": "not_started", "progress": None}
         return {"status": "ok", "progress": progress}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/decisions/review")
+async def decisions_review_endpoint():
+    """Review all active decisions grouped by module/topic."""
+    try:
+        result = decisions_review(USER_ID)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/decisions/refine")
+async def decisions_refine_endpoint(request: RefineRequest):
+    """Refine an existing decision: supersede old, create new."""
+    try:
+        result = refine_decision(USER_ID, request.decision_id, request.updated_decision)
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
