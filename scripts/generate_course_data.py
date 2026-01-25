@@ -192,8 +192,10 @@ def generate_lecture_content(title: str, speaker_type: str) -> str:
 
 def generate_filename(lecture_id: str, speaker_type: str, speaker_name: str, title: str) -> str:
     """Generate filename for lecture."""
-    # Clean title for filename
-    clean_title = title.replace(" ", "_").replace(":", "").replace(",", "")[:30]
+    # Clean title for filename - remove all problematic characters
+    import re
+    clean_title = re.sub(r'[^\w\s-]', '', title)  # Remove non-word chars except space and dash
+    clean_title = clean_title.replace(" ", "_")[:30]
     clean_speaker = speaker_name.split()[0] if speaker_name else "Unknown"
     return f"{lecture_id.replace('-', '_')}__{speaker_type}__{clean_speaker}__{clean_title}.txt"
 
