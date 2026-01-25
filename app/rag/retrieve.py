@@ -8,7 +8,7 @@ def retrieve_context(question: str) -> dict:
     client = get_client()
 
     company_results = client.rpc(
-        "match_memory",
+        "match_company_memory",
         {
             "query_embedding": embedding,
             "p_user_id": USER_ID,
