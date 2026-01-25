@@ -12,7 +12,7 @@ def retrieve_context(question: str) -> dict:
         {
             "query_embedding": embedding,
             "p_user_id": USER_ID,
-            "top": 6
+            "match_count": 6
         }
     ).execute()
 
@@ -21,7 +21,7 @@ def retrieve_context(question: str) -> dict:
         {
             "query_embedding": embedding,
             "filter": {},
-            "top": 12
+            "match_count": 12
         }
     ).execute()
 
