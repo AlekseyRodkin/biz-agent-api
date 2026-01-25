@@ -10,7 +10,7 @@ from app.rag.ask import ask as rag_ask
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="0.2.1"
+    version="0.2.3"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -30,7 +30,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "0.2.1"
+        "version": "0.2.3"
     }
 
 
