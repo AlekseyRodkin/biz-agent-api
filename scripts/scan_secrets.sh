@@ -6,11 +6,10 @@
 set -e
 
 # Patterns to detect (regex)
-# Note: patterns match hex/alphanumeric tokens, excluding REDACTED and placeholders
+# Note: patterns match real values, excluding REDACTED, placeholders, and change_me
 PATTERNS=(
-    'ADMIN_TOKEN=[a-f0-9]{16,}'            # ADMIN_TOKEN=hex_value (hex 16+ chars)
-    'ADMIN_TOKEN_CURRENT=[a-f0-9]{16,}'    # Full token values (hex 16+ chars)
-    'ADMIN_TOKEN_NEXT=[a-f0-9]{16,}'       # Full token values (hex 16+ chars)
+    'APP_PASSWORD=[a-zA-Z0-9!@#$%^&*]{12,}' # Real password (12+ chars, not placeholder)
+    'SESSION_SECRET=[a-zA-Z0-9]{20,}'       # Real session secret (20+ chars)
     'sb_secret_[a-zA-Z0-9]+'               # Supabase secret keys
     'eyJhbGci[a-zA-Z0-9_-]+'               # JWT tokens
     'sk-[a-zA-Z0-9]{20,}'                  # OpenAI-style keys

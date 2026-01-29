@@ -1,4 +1,4 @@
-# API Contract v1.8.3
+# API Contract v1.9.0
 
 ## Overview
 
@@ -9,59 +9,45 @@ Breaking changes require version bump and migration.
 
 ## Authentication
 
-### Admin Token
+### Session-Based Auth (Cookie)
 
-Protected endpoints require `X-Admin-Token` header.
+Protected endpoints require authenticated session via cookie.
 
 **Environment variables:**
-- `ADMIN_TOKEN_CURRENT` - active token (required)
-- `ADMIN_TOKEN_NEXT` - next token for rotation (optional)
+- `APP_USERNAME` - login username (required)
+- `APP_PASSWORD` - login password (required)
+- `SESSION_SECRET` - secret for signing cookies (required)
+- `SESSION_TTL_DAYS` - session duration in days (default: 7)
 
-**Backward compatible:** `ADMIN_TOKEN` works if `ADMIN_TOKEN_CURRENT` not set.
+### Login Flow
 
-**Example:**
-```bash
-curl -H "X-Admin-Token: your_secret_token" http://localhost:8000/dashboard/exec
-```
+1. **GET /login** - показывает форму логина
+2. **POST /login** - принимает `username` и `password`, ставит cookie `session`
+3. **POST /logout** - удаляет cookie, редирект на `/login`
 
-### Token Rotation (No Downtime)
-
-**Step 1: Generate NEXT token**
-```bash
-./scripts/rotate_admin_token.sh
-# Sets ADMIN_TOKEN_NEXT, restarts service
-# Both CURRENT and NEXT tokens now work
-# Token saved to .new_token (chmod 600)
-```
-
-**Step 2: Distribute new token to users**
-```bash
-cat /opt/biz-agent-api-git/biz-agent-api/.new_token  # view token
-```
-
-**Step 3: Complete rotation**
-```bash
-./scripts/swap_admin_token.sh
-# Moves NEXT -> CURRENT, removes NEXT
-# Old token becomes invalid
-```
+**Cookie details:**
+- Name: `session`
+- HttpOnly: true
+- SameSite: Lax
+- Max-Age: 7 days (configurable)
+- Signed with `itsdangerous` (URLSafeTimedSerializer)
 
 ### Security Rules
 
 ⚠️ **ОБЯЗАТЕЛЬНО:** См. `docs/SECURITY_RULES.md`
 
-- **НИКОГДА** не выводить токены в логи/stdout/отчёты
-- Показывать только `REDACTED` или первые 4 символа
+- **НИКОГДА** не выводить пароли в логи/stdout/отчёты
+- Пароль хранится только в `.env` на сервере
 - Перед коммитом: `./scripts/scan_secrets.sh`
 
 ### Auth Status Endpoint
 
 ```bash
 GET /auth/status
-# Response: {"enabled": true, "next_token_set": false}
+# Response: {"authenticated": true, "username": "alexey", "session_ttl_days": 7}
 ```
 
-### Protected Endpoints
+### Protected Endpoints (require session)
 
 | Endpoint | Method |
 |----------|--------|
@@ -86,6 +72,8 @@ GET /auth/status
 |----------|--------|
 | `/health` | GET |
 | `/auth/status` | GET |
+| `/login` | GET, POST |
+| `/logout` | POST |
 | `/study/*` | ALL |
 | `/decisions/*` | ALL |
 | `/course/*` | GET |
@@ -405,3 +393,4 @@ process     # Single process
 | 1.8.0 | 0006 | Admin token auth |
 | 1.8.2 | 0006 | Token rotation, /auth/status |
 | 1.8.3 | 0006 | Security rules, scan_secrets.sh |
+| 1.9.0 | 0006 | Session auth (cookie), login/logout, remove tokens |

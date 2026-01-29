@@ -14,7 +14,8 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 
 USER_ID = os.getenv("USER_ID", "alexey")
 
-# Auth tokens (supports rotation without downtime)
-# Backward compatible: ADMIN_TOKEN still works if ADMIN_TOKEN_CURRENT not set
-ADMIN_TOKEN_CURRENT = os.getenv("ADMIN_TOKEN_CURRENT", os.getenv("ADMIN_TOKEN", ""))
-ADMIN_TOKEN_NEXT = os.getenv("ADMIN_TOKEN_NEXT", "")
+# Session-based authentication
+APP_USERNAME = os.getenv("APP_USERNAME", "")
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))

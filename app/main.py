@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request, Form, Cookie
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, PlainTextResponse, HTMLResponse
+from fastapi.responses import FileResponse, PlainTextResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from typing import Optional
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
 from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, reset_progress, process_user_answer, get_user_progress
@@ -29,40 +30,56 @@ from app.rag.guardrails import (
     validate_actions_from_plan, validate_action_block,
     validate_action_link_metric, check_duplicate_plan, check_duplicate_metric
 )
-from app.config import USER_ID, ADMIN_TOKEN_CURRENT, ADMIN_TOKEN_NEXT
+from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESSION_TTL_DAYS
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.8.3"
+    version="1.9.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
 
+# Session serializer (signed cookies via itsdangerous)
+SESSION_MAX_AGE = SESSION_TTL_DAYS * 24 * 60 * 60  # seconds
 
-def require_admin_token(x_admin_token: Optional[str] = Header(None)) -> str:
-    """Dependency to validate admin token. Supports rotation via CURRENT + NEXT."""
-    if not ADMIN_TOKEN_CURRENT:
-        raise HTTPException(
-            status_code=500,
-            detail="ADMIN_TOKEN_CURRENT not configured on server"
-        )
-    if not x_admin_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing X-Admin-Token header"
-        )
-    # Accept either CURRENT or NEXT token (for rotation without downtime)
-    valid_tokens = [ADMIN_TOKEN_CURRENT]
-    if ADMIN_TOKEN_NEXT:
-        valid_tokens.append(ADMIN_TOKEN_NEXT)
 
-    if x_admin_token not in valid_tokens:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid admin token"
-        )
-    return x_admin_token
+def get_serializer():
+    """Get URLSafeTimedSerializer for session cookies."""
+    if not SESSION_SECRET:
+        raise HTTPException(status_code=500, detail="SESSION_SECRET not configured")
+    return URLSafeTimedSerializer(SESSION_SECRET)
+
+
+def create_session_cookie(username: str) -> str:
+    """Create signed session cookie value."""
+    serializer = get_serializer()
+    return serializer.dumps({"user": username})
+
+
+def verify_session_cookie(session: str) -> Optional[str]:
+    """Verify session cookie and return username or None."""
+    if not session:
+        return None
+    try:
+        serializer = get_serializer()
+        data = serializer.loads(session, max_age=SESSION_MAX_AGE)
+        return data.get("user")
+    except (SignatureExpired, BadSignature):
+        return None
+
+
+def require_session(session: Optional[str] = Cookie(None)) -> str:
+    """Dependency to require valid session. Returns username."""
+    user = verify_session_cookie(session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+def require_session_or_redirect(request: Request, session: Optional[str] = Cookie(None)) -> Optional[str]:
+    """Check session for UI pages. Returns username or None (for redirect)."""
+    return verify_session_cookie(session)
 
 
 class AskRequest(BaseModel):
@@ -142,18 +159,108 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.8.3",
+        "version": "1.9.0",
         "schema_version": SCHEMA_VERSION
     }
 
 
 @app.get("/auth/status")
-async def auth_status():
+async def auth_status(session: Optional[str] = Cookie(None)):
     """Check auth configuration status (no secrets exposed)."""
+    user = verify_session_cookie(session)
     return {
-        "enabled": bool(ADMIN_TOKEN_CURRENT),
-        "next_token_set": bool(ADMIN_TOKEN_NEXT)
+        "authenticated": user is not None,
+        "username": user,
+        "session_ttl_days": SESSION_TTL_DAYS
     }
+
+
+# --- Login / Logout ---
+
+LOGIN_PAGE_HTML = """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Biz Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; min-height: 100vh; display: flex; align-items: center; }
+        .login-card { max-width: 400px; margin: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-card">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white text-center">
+                    <h4><i class="bi bi-shield-lock"></i> Biz Agent Login</h4>
+                </div>
+                <div class="card-body">
+                    {error_html}
+                    <form method="POST" action="/login">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" required autofocus>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-box-arrow-in-right"></i> Login
+                        </button>
+                    </form>
+                </div>
+                <div class="card-footer text-muted text-center">
+                    <small>Session valid for {ttl_days} days</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+
+
+@app.get("/login")
+async def login_page(error: Optional[str] = None):
+    """Render login page."""
+    error_html = ""
+    if error:
+        error_html = f'<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> {error}</div>'
+    html = LOGIN_PAGE_HTML.format(error_html=error_html, ttl_days=SESSION_TTL_DAYS)
+    return HTMLResponse(content=html)
+
+
+@app.post("/login")
+async def login_submit(username: str = Form(...), password: str = Form(...)):
+    """Process login form and set session cookie."""
+    if not APP_USERNAME or not APP_PASSWORD:
+        return RedirectResponse(url="/login?error=Auth+not+configured", status_code=303)
+
+    if username != APP_USERNAME or password != APP_PASSWORD:
+        return RedirectResponse(url="/login?error=Invalid+credentials", status_code=303)
+
+    # Create session cookie and redirect to dashboard
+    session_value = create_session_cookie(username)
+    response = RedirectResponse(url="/ui/exec", status_code=303)
+    response.set_cookie(
+        key="session",
+        value=session_value,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax"
+    )
+    return response
+
+
+@app.post("/logout")
+async def logout():
+    """Clear session cookie and redirect to login."""
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(key="session")
+    return response
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -274,7 +381,7 @@ async def module_review_endpoint(request: ModuleReviewRequest):
 
 
 @app.post("/module/summary")
-async def module_summary_endpoint(request: ModuleSummaryRequest, _: str = Depends(require_admin_token)):
+async def module_summary_endpoint(request: ModuleSummaryRequest, _: str = Depends(require_session)):
     """Save module summary to memory. Requires admin token."""
     try:
         summary_id = save_module_summary(USER_ID, request.module, request.summary)
@@ -319,7 +426,7 @@ async def architect_session_endpoint(request: ArchitectSessionRequest):
 
 
 @app.post("/session/architect/save")
-async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest, _: str = Depends(require_admin_token)):
+async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest, _: str = Depends(require_session)):
     """Save architect plan to memory. Requires admin token."""
     try:
         # Guardrails: validate input
@@ -350,7 +457,7 @@ async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest, _: str
 
 
 @app.post("/actions/from-plan")
-async def actions_from_plan_endpoint(request: ActionsFromPlanRequest, _: str = Depends(require_admin_token)):
+async def actions_from_plan_endpoint(request: ActionsFromPlanRequest, _: str = Depends(require_session)):
     """Generate action items from an architect plan. Requires admin token."""
     try:
         # Guardrails: validate plan exists and is architect_plan
@@ -413,7 +520,7 @@ async def get_action_endpoint(action_id: str):
 
 
 @app.post("/actions/{action_id}/start")
-async def start_action_endpoint(action_id: str, _: str = Depends(require_admin_token)):
+async def start_action_endpoint(action_id: str, _: str = Depends(require_session)):
     """Set action status to in_progress. Requires admin token."""
     try:
         action = start_action(USER_ID, action_id)
@@ -427,7 +534,7 @@ async def start_action_endpoint(action_id: str, _: str = Depends(require_admin_t
 
 
 @app.post("/actions/{action_id}/complete")
-async def complete_action_endpoint(action_id: str, request: ActionCompleteRequest = None, _: str = Depends(require_admin_token)):
+async def complete_action_endpoint(action_id: str, request: ActionCompleteRequest = None, _: str = Depends(require_session)):
     """Set action status to done. Requires admin token."""
     try:
         result_text = request.result if request else None
@@ -442,7 +549,7 @@ async def complete_action_endpoint(action_id: str, request: ActionCompleteReques
 
 
 @app.post("/actions/{action_id}/block")
-async def block_action_endpoint(action_id: str, request: ActionBlockRequest, _: str = Depends(require_admin_token)):
+async def block_action_endpoint(action_id: str, request: ActionBlockRequest, _: str = Depends(require_session)):
     """Set action status to blocked. Requires admin token."""
     try:
         # Guardrails: validate reason is not empty
@@ -481,7 +588,7 @@ async def weekly_review_endpoint():
 
 
 @app.post("/metrics/create")
-async def create_metric_endpoint(request: MetricCreateRequest, _: str = Depends(require_admin_token)):
+async def create_metric_endpoint(request: MetricCreateRequest, _: str = Depends(require_session)):
     """Create a new metric for tracking outcomes. Requires admin token."""
     try:
         # Guardrails: validate input
@@ -557,7 +664,7 @@ async def get_metric_endpoint(metric_id: str):
 
 
 @app.post("/metrics/{metric_id}/update")
-async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest, _: str = Depends(require_admin_token)):
+async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest, _: str = Depends(require_session)):
     """Update the current value of a metric. Requires admin token."""
     try:
         metric = update_metric_value(USER_ID, metric_id, request.current_value)
@@ -571,7 +678,7 @@ async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest, _
 
 
 @app.post("/actions/{action_id}/link-metric")
-async def link_action_metric_endpoint(action_id: str, request: ActionLinkMetricRequest, _: str = Depends(require_admin_token)):
+async def link_action_metric_endpoint(action_id: str, request: ActionLinkMetricRequest, _: str = Depends(require_session)):
     """Link an action to a metric. Requires admin token."""
     try:
         # Guardrails: validate both action and metric exist
@@ -602,7 +709,7 @@ async def get_action_metric_endpoint(action_id: str):
 
 
 @app.get("/dashboard/exec")
-async def executive_dashboard_endpoint(_: str = Depends(require_admin_token)):
+async def executive_dashboard_endpoint(_: str = Depends(require_session)):
     """Get executive dashboard with aggregated data. Requires admin token."""
     try:
         result = executive_dashboard(USER_ID)
@@ -612,7 +719,7 @@ async def executive_dashboard_endpoint(_: str = Depends(require_admin_token)):
 
 
 @app.get("/export/decisions")
-async def export_decisions_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+async def export_decisions_endpoint(format: str = "json", _: str = Depends(require_session)):
     """Export all decisions in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_decisions(USER_ID, format)
@@ -626,7 +733,7 @@ async def export_decisions_endpoint(format: str = "json", _: str = Depends(requi
 
 
 @app.get("/export/actions")
-async def export_actions_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+async def export_actions_endpoint(format: str = "json", _: str = Depends(require_session)):
     """Export all actions in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_actions(USER_ID, format)
@@ -640,7 +747,7 @@ async def export_actions_endpoint(format: str = "json", _: str = Depends(require
 
 
 @app.get("/export/metrics")
-async def export_metrics_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+async def export_metrics_endpoint(format: str = "json", _: str = Depends(require_session)):
     """Export all metrics in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_metrics(USER_ID, format)
@@ -654,7 +761,7 @@ async def export_metrics_endpoint(format: str = "json", _: str = Depends(require
 
 
 @app.get("/export/plans")
-async def export_plans_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+async def export_plans_endpoint(format: str = "json", _: str = Depends(require_session)):
     """Export all architect plans in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_plans(USER_ID, format)
@@ -668,8 +775,11 @@ async def export_plans_endpoint(format: str = "json", _: str = Depends(require_a
 
 
 @app.get("/ui/exec")
-async def serve_exec_ui():
-    """Executive Dashboard UI with Bootstrap."""
+async def serve_exec_ui(session: Optional[str] = Cookie(None)):
+    """Executive Dashboard UI with Bootstrap. Requires session."""
+    user = verify_session_cookie(session)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
     return FileResponse(os.path.join(STATIC_DIR, "exec.html"))
 
 
