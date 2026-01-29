@@ -4,6 +4,7 @@ import re
 from app.db.supabase_client import get_client
 from app.embeddings.embedder import embed_query
 from app.llm.deepseek_client import chat_completion
+from app.rag.actions import build_actions_context
 
 
 ARCHITECT_SYSTEM_PROMPT = """Ты — AI-архитектор внедрения ИИ в бизнес.
@@ -127,7 +128,8 @@ def build_architect_context(
     time_horizon: int,
     decisions: list[dict],
     methodology: list[dict],
-    cases: list[dict]
+    cases: list[dict],
+    actions_context: str = ""
 ) -> str:
     """Build context for architect prompt."""
     parts = []
@@ -138,6 +140,10 @@ def build_architect_context(
 
     if constraints:
         parts.append(f"USER_CONSTRAINTS: {', '.join(constraints)}")
+
+    # Current actions (if any)
+    if actions_context:
+        parts.append(f"\n{actions_context}")
 
     # Decisions
     parts.append("\nCOMPANY_DECISIONS (уже принятые решения):")
@@ -185,10 +191,13 @@ def architect_session(
     methodology = get_relevant_methodology(goal_embedding, limit=12)
     cases = get_relevant_cases(goal_embedding, limit=3)
 
+    # Get current actions context
+    actions_context = build_actions_context(user_id)
+
     # Build context
     context = build_architect_context(
         goal, scope, constraints, time_horizon_days,
-        decisions, methodology, cases
+        decisions, methodology, cases, actions_context
     )
 
     # Generate plan
