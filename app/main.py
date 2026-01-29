@@ -10,12 +10,13 @@ from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, reset_progress, process_user_answer, get_user_progress
 from app.rag.decisions import decisions_review, refine_decision
 from app.rag.course_map import get_course_map, get_course_progress
+from app.rag.module_review import module_review, save_module_summary, check_module_completion
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="0.9.0"
+    version="1.0.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -41,12 +42,21 @@ class RefineRequest(BaseModel):
     updated_decision: str
 
 
+class ModuleReviewRequest(BaseModel):
+    module: int
+
+
+class ModuleSummaryRequest(BaseModel):
+    module: int
+    summary: str
+
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "0.9.0"
+        "version": "1.0.0"
     }
 
 
@@ -148,6 +158,49 @@ async def course_progress_endpoint():
     """Get user progress with percentages and navigation preview."""
     try:
         result = get_course_progress(USER_ID)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/module/review")
+async def module_review_endpoint(request: ModuleReviewRequest):
+    """Review a module: methodology summary, decisions, gaps."""
+    try:
+        result = module_review(USER_ID, request.module)
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/module/summary")
+async def module_summary_endpoint(request: ModuleSummaryRequest):
+    """Save module summary to memory."""
+    try:
+        summary_id = save_module_summary(USER_ID, request.module, request.summary)
+        if not summary_id:
+            raise HTTPException(status_code=500, detail="Failed to save summary")
+        return {
+            "status": "ok",
+            "module": request.module,
+            "summary_id": str(summary_id),
+            "message": f"Итог модуля {request.module} сохранён"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/module/status/{module}")
+async def module_status_endpoint(module: int):
+    """Check module completion status."""
+    try:
+        result = check_module_completion(USER_ID, module)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
