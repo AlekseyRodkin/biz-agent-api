@@ -18,7 +18,7 @@ from app.db.supabase_client import get_client
 def get_counts(client) -> dict:
     """Get total counts of lectures and chunks."""
     lectures = client.table("course_lectures").select("lecture_id", count="exact").execute()
-    chunks = client.table("course_chunks").select("id", count="exact").execute()
+    chunks = client.table("course_chunks").select("chunk_id", count="exact").execute()
     return {
         "lectures": lectures.count,
         "chunks": chunks.count
@@ -27,44 +27,79 @@ def get_counts(client) -> dict:
 
 def get_speaker_type_distribution(client) -> dict:
     """Get chunk distribution by speaker_type."""
-    result = client.table("course_chunks").select("speaker_type").execute()
+    # Use pagination to get all records (Supabase default limit is 1000)
     dist = {}
-    for row in result.data:
-        st = row["speaker_type"]
-        dist[st] = dist.get(st, 0) + 1
+    offset = 0
+    limit = 1000
+    while True:
+        result = client.table("course_chunks").select("speaker_type").range(offset, offset + limit - 1).execute()
+        if not result.data:
+            break
+        for row in result.data:
+            st = row["speaker_type"]
+            dist[st] = dist.get(st, 0) + 1
+        if len(result.data) < limit:
+            break
+        offset += limit
     return dist
 
 
 def get_content_type_distribution(client) -> dict:
     """Get chunk distribution by content_type."""
-    result = client.table("course_chunks").select("content_type").execute()
     dist = {}
-    for row in result.data:
-        ct = row["content_type"]
-        dist[ct] = dist.get(ct, 0) + 1
+    offset = 0
+    limit = 1000
+    while True:
+        result = client.table("course_chunks").select("content_type").range(offset, offset + limit - 1).execute()
+        if not result.data:
+            break
+        for row in result.data:
+            ct = row["content_type"]
+            dist[ct] = dist.get(ct, 0) + 1
+        if len(result.data) < limit:
+            break
+        offset += limit
     return dist
 
 
-def get_top_lectures_by_chunks(client, limit: int = 10) -> list[dict]:
+def get_top_lectures_by_chunks(client, top_n: int = 10) -> list[dict]:
     """Get top N lectures by number of chunks."""
-    result = client.table("course_chunks").select("lecture_id").execute()
-
     counts = {}
-    for row in result.data:
-        lid = row["lecture_id"]
-        counts[lid] = counts.get(lid, 0) + 1
+    offset = 0
+    limit = 1000
+    while True:
+        result = client.table("course_chunks").select("lecture_id").range(offset, offset + limit - 1).execute()
+        if not result.data:
+            break
+        for row in result.data:
+            lid = row["lecture_id"]
+            counts[lid] = counts.get(lid, 0) + 1
+        if len(result.data) < limit:
+            break
+        offset += limit
 
     sorted_counts = sorted(counts.items(), key=lambda x: x[1], reverse=True)
-    return [{"lecture_id": k, "chunks": v} for k, v in sorted_counts[:limit]]
+    return [{"lecture_id": k, "chunks": v} for k, v in sorted_counts[:top_n]]
 
 
 def get_lectures_with_zero_chunks(client) -> list[str]:
     """Find lectures that have zero chunks (bug indicator)."""
     lectures = client.table("course_lectures").select("lecture_id").execute()
-    chunks = client.table("course_chunks").select("lecture_id").execute()
-
     all_lecture_ids = {l["lecture_id"] for l in lectures.data}
-    lecture_ids_with_chunks = {c["lecture_id"] for c in chunks.data}
+
+    # Get all lecture_ids from chunks with pagination
+    lecture_ids_with_chunks = set()
+    offset = 0
+    limit = 1000
+    while True:
+        result = client.table("course_chunks").select("lecture_id").range(offset, offset + limit - 1).execute()
+        if not result.data:
+            break
+        for row in result.data:
+            lecture_ids_with_chunks.add(row["lecture_id"])
+        if len(result.data) < limit:
+            break
+        offset += limit
 
     zero_chunks = all_lecture_ids - lecture_ids_with_chunks
     return sorted(list(zero_chunks))
