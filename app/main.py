@@ -11,12 +11,13 @@ from app.rag.study import study_next, reset_progress, process_user_answer, get_u
 from app.rag.decisions import decisions_review, refine_decision
 from app.rag.course_map import get_course_map, get_course_progress
 from app.rag.module_review import module_review, save_module_summary, check_module_completion
+from app.rag.architect_session import architect_session, save_architect_plan
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -51,12 +52,24 @@ class ModuleSummaryRequest(BaseModel):
     summary: str
 
 
+class ArchitectSessionRequest(BaseModel):
+    goal: str
+    scope: str = "company"
+    constraints: list[str] = []
+    time_horizon_days: int = 14
+
+
+class ArchitectPlanSaveRequest(BaseModel):
+    goal: str
+    plan: str
+
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0"
+        "version": "1.1.0"
     }
 
 
@@ -202,6 +215,40 @@ async def module_status_endpoint(module: int):
     try:
         result = check_module_completion(USER_ID, module)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/session/architect")
+async def architect_session_endpoint(request: ArchitectSessionRequest):
+    """Run architect session: structured planning for AI implementation."""
+    try:
+        result = architect_session(
+            USER_ID,
+            request.goal,
+            request.scope,
+            request.constraints,
+            request.time_horizon_days
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/session/architect/save")
+async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest):
+    """Save architect plan to memory."""
+    try:
+        plan_id = save_architect_plan(USER_ID, request.plan, request.goal)
+        if not plan_id:
+            raise HTTPException(status_code=500, detail="Failed to save plan")
+        return {
+            "status": "ok",
+            "plan_id": str(plan_id),
+            "message": "Архитектурный план сохранён"
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
