@@ -1,4 +1,4 @@
-# API Contract v1.8.0
+# API Contract v1.8.2
 
 ## Overview
 
@@ -13,11 +13,40 @@ Breaking changes require version bump and migration.
 
 Protected endpoints require `X-Admin-Token` header.
 
-**Environment variable:** `ADMIN_TOKEN`
+**Environment variables:**
+- `ADMIN_TOKEN_CURRENT` - active token (required)
+- `ADMIN_TOKEN_NEXT` - next token for rotation (optional)
+
+**Backward compatible:** `ADMIN_TOKEN` works if `ADMIN_TOKEN_CURRENT` not set.
 
 **Example:**
 ```bash
 curl -H "X-Admin-Token: your_secret_token" http://localhost:8000/dashboard/exec
+```
+
+### Token Rotation (No Downtime)
+
+**Step 1: Generate NEXT token**
+```bash
+./scripts/rotate_admin_token.sh
+# Sets ADMIN_TOKEN_NEXT, restarts service
+# Both CURRENT and NEXT tokens now work
+```
+
+**Step 2: Distribute new token to users**
+
+**Step 3: Complete rotation**
+```bash
+./scripts/swap_admin_token.sh
+# Moves NEXT -> CURRENT, removes NEXT
+# Old token becomes invalid
+```
+
+### Auth Status Endpoint
+
+```bash
+GET /auth/status
+# Response: {"enabled": true, "next_token_set": false}
 ```
 
 ### Protected Endpoints
@@ -44,6 +73,7 @@ curl -H "X-Admin-Token: your_secret_token" http://localhost:8000/dashboard/exec
 | Endpoint | Method |
 |----------|--------|
 | `/health` | GET |
+| `/auth/status` | GET |
 | `/study/*` | ALL |
 | `/decisions/*` | ALL |
 | `/course/*` | GET |
@@ -361,3 +391,4 @@ process     # Single process
 | 1.6.0 | 0006 | Guardrails, contracts |
 | 1.7.1 | 0006 | Bootstrap UI |
 | 1.8.0 | 0006 | Admin token auth |
+| 1.8.2 | 0006 | Token rotation, /auth/status |

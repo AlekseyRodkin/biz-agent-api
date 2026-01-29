@@ -29,30 +29,35 @@ from app.rag.guardrails import (
     validate_actions_from_plan, validate_action_block,
     validate_action_link_metric, check_duplicate_plan, check_duplicate_metric
 )
-from app.config import USER_ID, ADMIN_TOKEN
+from app.config import USER_ID, ADMIN_TOKEN_CURRENT, ADMIN_TOKEN_NEXT
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.8.0"
+    version="1.8.2"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
 
 
 def require_admin_token(x_admin_token: Optional[str] = Header(None)) -> str:
-    """Dependency to validate admin token."""
-    if not ADMIN_TOKEN:
+    """Dependency to validate admin token. Supports rotation via CURRENT + NEXT."""
+    if not ADMIN_TOKEN_CURRENT:
         raise HTTPException(
             status_code=500,
-            detail="ADMIN_TOKEN not configured on server"
+            detail="ADMIN_TOKEN_CURRENT not configured on server"
         )
     if not x_admin_token:
         raise HTTPException(
             status_code=401,
             detail="Missing X-Admin-Token header"
         )
-    if x_admin_token != ADMIN_TOKEN:
+    # Accept either CURRENT or NEXT token (for rotation without downtime)
+    valid_tokens = [ADMIN_TOKEN_CURRENT]
+    if ADMIN_TOKEN_NEXT:
+        valid_tokens.append(ADMIN_TOKEN_NEXT)
+
+    if x_admin_token not in valid_tokens:
         raise HTTPException(
             status_code=401,
             detail="Invalid admin token"
@@ -137,8 +142,17 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.8.0",
+        "version": "1.8.2",
         "schema_version": SCHEMA_VERSION
+    }
+
+
+@app.get("/auth/status")
+async def auth_status():
+    """Check auth configuration status (no secrets exposed)."""
+    return {
+        "enabled": bool(ADMIN_TOKEN_CURRENT),
+        "next_token_set": bool(ADMIN_TOKEN_NEXT)
     }
 
 

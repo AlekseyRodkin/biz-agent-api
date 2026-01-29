@@ -14,4 +14,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 
 USER_ID = os.getenv("USER_ID", "alexey")
 
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+# Auth tokens (supports rotation without downtime)
+# Backward compatible: ADMIN_TOKEN still works if ADMIN_TOKEN_CURRENT not set
+ADMIN_TOKEN_CURRENT = os.getenv("ADMIN_TOKEN_CURRENT", os.getenv("ADMIN_TOKEN", ""))
+ADMIN_TOKEN_NEXT = os.getenv("ADMIN_TOKEN_NEXT", "")
