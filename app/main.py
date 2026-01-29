@@ -16,12 +16,13 @@ from app.rag.actions import (
     create_actions_from_plan, get_actions, get_action,
     start_action, complete_action, block_action, get_actions_status
 )
+from app.rag.rituals import daily_focus, weekly_review
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.2.0"
+    version="1.3.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -85,7 +86,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.2.0"
+        "version": "1.3.0"
     }
 
 
@@ -366,6 +367,26 @@ async def block_action_endpoint(action_id: str, request: ActionBlockRequest):
         return {"status": "ok", "action": action}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ritual/daily")
+async def daily_focus_endpoint():
+    """Get daily focus: actions for today and blockers."""
+    try:
+        result = daily_focus(USER_ID)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ritual/weekly")
+async def weekly_review_endpoint():
+    """Get weekly review: progress, blockers, recommendations."""
+    try:
+        result = weekly_review(USER_ID)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
