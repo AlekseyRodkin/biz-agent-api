@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 from app.db.supabase_client import get_client
 from app.llm.deepseek_client import chat_completion
+from app.rag.metrics import get_metrics_for_weekly
 
 
 DAILY_FOCUS_PROMPT = """Ты — AI-ассистент для управления проектами внедрения ИИ.
@@ -38,6 +39,10 @@ WEEKLY_REVIEW_PROMPT = """Ты — AI-ассистент для управлен
 [ЧТО НЕ ЗАВЕРШЕНО]
 - какие действия остались в работе или запланированы
 - почему это важно
+
+[ЭФФЕКТ ЗА НЕДЕЛЮ]
+- если есть метрики — укажи изменения (baseline → current, delta)
+- если метрик нет — напиши "Метрики не заведены"
 
 [РИСКИ]
 - заблокированные действия и их причины
@@ -175,7 +180,7 @@ def build_daily_context(data: dict) -> str:
     return "\n".join(parts)
 
 
-def build_weekly_context(data: dict) -> str:
+def build_weekly_context(data: dict, metrics_context: str = "") -> str:
     """Build context for weekly review prompt."""
     parts = [f"Неделя: {data['week_start']} — {data['week_end']}"]
 
@@ -219,6 +224,12 @@ def build_weekly_context(data: dict) -> str:
     done_count = len(data["done_this_week"])
     parts.append(f"\nСТАТИСТИКА: {done_count}/{total} выполнено")
 
+    # Metrics
+    if metrics_context:
+        parts.append(f"\n{metrics_context}")
+    else:
+        parts.append("\nМЕТРИКИ: не заведены")
+
     return "\n".join(parts)
 
 
@@ -249,7 +260,8 @@ def daily_focus(user_id: str) -> dict:
 def weekly_review(user_id: str) -> dict:
     """Generate weekly review report."""
     data = get_actions_for_weekly(user_id)
-    context = build_weekly_context(data)
+    metrics_context = get_metrics_for_weekly(user_id)
+    context = build_weekly_context(data, metrics_context)
 
     messages = [
         {"role": "system", "content": WEEKLY_REVIEW_PROMPT},
@@ -274,7 +286,8 @@ def weekly_review(user_id: str) -> dict:
             "progress_percent": round((done_count / total * 100) if total > 0 else 0, 1)
         },
         "active_plans": len(data["active_plans"]),
-        "has_blockers": len(data["blocked"]) > 0
+        "has_blockers": len(data["blocked"]) > 0,
+        "has_metrics": bool(metrics_context)
     }
 
 

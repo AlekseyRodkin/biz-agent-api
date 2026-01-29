@@ -17,12 +17,16 @@ from app.rag.actions import (
     start_action, complete_action, block_action, get_actions_status
 )
 from app.rag.rituals import daily_focus, weekly_review
+from app.rag.metrics import (
+    create_metric, get_metrics, get_metric, update_metric_value,
+    calculate_impact, link_action_to_metric, get_metrics_for_action
+)
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.3.0"
+    version="1.4.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -81,12 +85,31 @@ class ActionBlockRequest(BaseModel):
     reason: str
 
 
+class MetricCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    scope: str = "company"
+    baseline_value: Optional[float] = None
+    target_value: Optional[float] = None
+    current_value: Optional[float] = None
+    unit: Optional[str] = None
+    related_plan_id: Optional[str] = None
+
+
+class MetricUpdateRequest(BaseModel):
+    current_value: float
+
+
+class ActionLinkMetricRequest(BaseModel):
+    metric_id: str
+
+
 @app.get("/health")
 async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.3.0"
+        "version": "1.4.0"
     }
 
 
@@ -387,6 +410,104 @@ async def weekly_review_endpoint():
     try:
         result = weekly_review(USER_ID)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/metrics/create")
+async def create_metric_endpoint(request: MetricCreateRequest):
+    """Create a new metric for tracking outcomes."""
+    try:
+        metric = create_metric(
+            USER_ID,
+            request.name,
+            request.description,
+            request.scope,
+            request.baseline_value,
+            request.target_value,
+            request.current_value,
+            request.unit,
+            request.related_plan_id
+        )
+        if not metric:
+            raise HTTPException(status_code=500, detail="Failed to create metric")
+        return {"status": "ok", "metric": metric}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics")
+async def get_metrics_endpoint(status: Optional[str] = None):
+    """Get all metrics, optionally filtered by status."""
+    try:
+        metrics = get_metrics(USER_ID, status)
+        return {"total": len(metrics), "metrics": metrics}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/impact")
+async def metrics_impact_endpoint():
+    """Get impact analysis across all metrics."""
+    try:
+        result = calculate_impact(USER_ID)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics/{metric_id}")
+async def get_metric_endpoint(metric_id: str):
+    """Get a single metric by ID."""
+    try:
+        metric = get_metric(USER_ID, metric_id)
+        if not metric:
+            raise HTTPException(status_code=404, detail="Metric not found")
+        return metric
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/metrics/{metric_id}/update")
+async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest):
+    """Update the current value of a metric."""
+    try:
+        metric = update_metric_value(USER_ID, metric_id, request.current_value)
+        if not metric:
+            raise HTTPException(status_code=404, detail="Metric not found")
+        return {"status": "ok", "metric": metric}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/actions/{action_id}/link-metric")
+async def link_action_metric_endpoint(action_id: str, request: ActionLinkMetricRequest):
+    """Link an action to a metric."""
+    try:
+        action = link_action_to_metric(USER_ID, action_id, request.metric_id)
+        if not action:
+            raise HTTPException(status_code=404, detail="Action not found")
+        return {"status": "ok", "action": action}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/actions/{action_id}/metric")
+async def get_action_metric_endpoint(action_id: str):
+    """Get the metric linked to an action."""
+    try:
+        metric = get_metrics_for_action(USER_ID, action_id)
+        if not metric:
+            return {"status": "ok", "metric": None, "message": "No metric linked"}
+        return {"status": "ok", "metric": metric}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
