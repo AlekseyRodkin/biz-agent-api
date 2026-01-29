@@ -1,4 +1,4 @@
-# API Contract v1.8.2
+# API Contract v1.8.3
 
 ## Overview
 
@@ -31,9 +31,13 @@ curl -H "X-Admin-Token: your_secret_token" http://localhost:8000/dashboard/exec
 ./scripts/rotate_admin_token.sh
 # Sets ADMIN_TOKEN_NEXT, restarts service
 # Both CURRENT and NEXT tokens now work
+# Token saved to .new_token (chmod 600)
 ```
 
 **Step 2: Distribute new token to users**
+```bash
+cat /opt/biz-agent-api-git/biz-agent-api/.new_token  # view token
+```
 
 **Step 3: Complete rotation**
 ```bash
@@ -41,6 +45,14 @@ curl -H "X-Admin-Token: your_secret_token" http://localhost:8000/dashboard/exec
 # Moves NEXT -> CURRENT, removes NEXT
 # Old token becomes invalid
 ```
+
+### Security Rules
+
+⚠️ **ОБЯЗАТЕЛЬНО:** См. `docs/SECURITY_RULES.md`
+
+- **НИКОГДА** не выводить токены в логи/stdout/отчёты
+- Показывать только `REDACTED` или первые 4 символа
+- Перед коммитом: `./scripts/scan_secrets.sh`
 
 ### Auth Status Endpoint
 
@@ -392,3 +404,4 @@ process     # Single process
 | 1.7.1 | 0006 | Bootstrap UI |
 | 1.8.0 | 0006 | Admin token auth |
 | 1.8.2 | 0006 | Token rotation, /auth/status |
+| 1.8.3 | 0006 | Security rules, scan_secrets.sh |
