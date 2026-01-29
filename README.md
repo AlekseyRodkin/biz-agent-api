@@ -25,22 +25,29 @@ uvicorn app.main:app --reload --port 8000
 
 ### Course Ingestion
 
+**DISCIPLINE: Writing to Supabase requires explicit `--force` flag.**
+
 ```bash
 # Validate manifest and files (ALWAYS run first)
 python scripts/ingest_course.py --validate
 
-# Preview without writing to DB
+# Preview chunks without writing to DB
 python scripts/ingest_course.py --dry-run
 
-# Ingest all lectures
-python scripts/ingest_course.py
+# Detailed chunking statistics (min/avg/max per lecture)
+python scripts/ingest_course.py --dry-run --stats
+
+# Actually write to Supabase (REQUIRES --force)
+python scripts/ingest_course.py --force
 
 # Ingest single module
-python scripts/ingest_course.py --module 1
+python scripts/ingest_course.py --force --module 1
 
 # Ingest single lecture
-python scripts/ingest_course.py --lecture-id M1-D1-L02
+python scripts/ingest_course.py --force --lecture-id M1-D1-L02
 ```
+
+**⚠️ Without `--force`, NO data will be written to Supabase.**
 
 **IMPORTANT:** Ingestion requires real course data:
 - `data/lectures_manifest.csv` - manifest file

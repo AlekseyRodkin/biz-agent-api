@@ -7,14 +7,15 @@ IMPORTANT: This script requires real course data:
 - data/lectures_manifest.csv (manifest file)
 - data/course/*.txt (lecture text files)
 
-For test data generation, use generate_course_data.py separately (dev only).
+DISCIPLINE: Writing to Supabase requires explicit --force flag.
+Without --force, only validation and dry-run are allowed.
 
 Usage:
   python scripts/ingest_course.py --validate           # Validate manifest and files
   python scripts/ingest_course.py --dry-run            # Preview chunks, no DB writes
-  python scripts/ingest_course.py                      # All lectures
-  python scripts/ingest_course.py --module 1           # Module 1 only
-  python scripts/ingest_course.py --lecture-id M1-D1-L02  # Single lecture
+  python scripts/ingest_course.py --dry-run --stats    # Detailed chunking statistics
+  python scripts/ingest_course.py --force              # Actually write to Supabase
+  python scripts/ingest_course.py --force --module 1   # Module 1 only
 """
 
 import argparse
@@ -154,7 +155,7 @@ def print_validation_report(validation: dict) -> None:
             print(f"   - {err}")
     else:
         print(f"\n✅ VALIDATION PASSED")
-        print("   Ready for ingestion")
+        print("   Ready for ingestion (use --force to write to DB)")
 
 
 def strict_pre_checks() -> tuple[bool, str]:
@@ -244,26 +245,44 @@ def insert_chunks(client, lecture: dict, chunks: list[dict], embed_fn) -> int:
     return len(records)
 
 
-def process_lecture_dry_run(lecture: dict) -> dict:
+def process_lecture_dry_run(lecture: dict, show_stats: bool = False) -> dict:
     """Process lecture in dry-run mode (no DB writes)."""
-    from app.ingest.chunker import chunk_text
+    from app.ingest.chunker import chunk_text, get_chunking_stats
 
     try:
         text = read_lecture_file(lecture["source_file"])
-        chunks = list(chunk_text(text))
-        content_types = {}
-        for c in chunks:
-            ct = c["content_type"]
-            content_types[ct] = content_types.get(ct, 0) + 1
-        return {
-            "lecture_id": lecture["lecture_id"],
-            "title": lecture["lecture_title"],
-            "speaker_type": lecture["speaker_type"],
-            "chunks": len(chunks),
-            "content_types": content_types,
-            "text_length": len(text),
-            "error": None
-        }
+
+        if show_stats:
+            stats = get_chunking_stats(text)
+            return {
+                "lecture_id": lecture["lecture_id"],
+                "title": lecture["lecture_title"],
+                "speaker_type": lecture["speaker_type"],
+                "source_file": lecture["source_file"],
+                "text_length": stats["text_length"],
+                "paragraph_count": stats["paragraph_count"],
+                "chunk_count": stats["chunk_count"],
+                "min_chunk_size": stats["min_chunk_size"],
+                "avg_chunk_size": stats["avg_chunk_size"],
+                "max_chunk_size": stats["max_chunk_size"],
+                "content_types": stats["content_types"],
+                "error": stats.get("error")
+            }
+        else:
+            chunks = list(chunk_text(text, validate=False))
+            content_types = {}
+            for c in chunks:
+                ct = c["content_type"]
+                content_types[ct] = content_types.get(ct, 0) + 1
+            return {
+                "lecture_id": lecture["lecture_id"],
+                "title": lecture["lecture_title"],
+                "speaker_type": lecture["speaker_type"],
+                "chunks": len(chunks),
+                "content_types": content_types,
+                "text_length": len(text),
+                "error": None
+            }
     except Exception as e:
         return {
             "lecture_id": lecture["lecture_id"],
@@ -291,6 +310,36 @@ def ingest_lecture(client, lecture: dict, embed_fn, chunk_fn) -> int:
     return count
 
 
+def print_stats_table(results: list[dict]) -> None:
+    """Print detailed statistics table."""
+    print("\n" + "=" * 120)
+    print("CHUNKING STATISTICS")
+    print("=" * 120)
+    print(f"{'Lecture ID':<15} {'Type':<12} {'Text':<8} {'Paras':<6} {'Chunks':<7} {'Min':<6} {'Avg':<6} {'Max':<6} {'File'}")
+    print("-" * 120)
+
+    total_chunks = 0
+    total_text = 0
+
+    for r in results:
+        if r.get("error"):
+            print(f"{r['lecture_id']:<15} ERROR: {r['error']}")
+            continue
+
+        total_chunks += r.get("chunk_count", r.get("chunks", 0))
+        total_text += r.get("text_length", 0)
+
+        if "chunk_count" in r:  # stats mode
+            print(f"{r['lecture_id']:<15} {r['speaker_type']:<12} {r['text_length']:<8} {r['paragraph_count']:<6} {r['chunk_count']:<7} {r['min_chunk_size']:<6} {r['avg_chunk_size']:<6} {r['max_chunk_size']:<6} {r['source_file'][:40]}")
+        else:  # simple mode
+            print(f"{r['lecture_id']:<15} {r['speaker_type']:<12} {r['text_length']:<8} {'N/A':<6} {r['chunks']:<7}")
+
+    print("-" * 120)
+    print(f"TOTAL: {len(results)} lectures, {total_text:,} chars, {total_chunks} chunks")
+    if total_chunks > 0:
+        print(f"Average: {total_text // total_chunks} chars/chunk, {total_chunks / len(results):.1f} chunks/lecture")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ingest course lectures into Supabase",
@@ -298,19 +347,23 @@ def main():
         epilog="""
 Examples:
   python scripts/ingest_course.py --validate           # Validate manifest
-  python scripts/ingest_course.py --dry-run            # Preview, no DB writes
-  python scripts/ingest_course.py                      # All lectures
-  python scripts/ingest_course.py --module 1           # Module 1 only
-  python scripts/ingest_course.py --lecture-id M1-D1-L02  # Single lecture
+  python scripts/ingest_course.py --dry-run            # Preview chunks
+  python scripts/ingest_course.py --dry-run --stats    # Detailed statistics
+  python scripts/ingest_course.py --force              # Write to Supabase
+  python scripts/ingest_course.py --force --module 1   # Module 1 only
 
-IMPORTANT: Requires real course data in data/ directory.
-For test data, use generate_course_data.py (dev only).
+IMPORTANT:
+- Requires real course data in data/ directory
+- Writing to Supabase requires --force flag
+- Without --force, only validation and dry-run are allowed
         """
     )
     parser.add_argument("--validate", action="store_true", help="Validate manifest and files only")
     parser.add_argument("--lecture-id", type=str, help="Process single lecture by ID")
     parser.add_argument("--module", type=int, help="Process all lectures in module")
     parser.add_argument("--dry-run", action="store_true", help="Preview chunks without writing to DB")
+    parser.add_argument("--stats", action="store_true", help="Show detailed chunking statistics (use with --dry-run)")
+    parser.add_argument("--force", action="store_true", help="Actually write to Supabase (REQUIRED for ingestion)")
     args = parser.parse_args()
 
     # Validate mode
@@ -320,7 +373,21 @@ For test data, use generate_course_data.py (dev only).
         print_validation_report(validation)
         sys.exit(0 if validation["valid"] else 1)
 
-    # Strict pre-checks for actual ingestion
+    # If neither --dry-run nor --force, show help
+    if not args.dry_run and not args.force:
+        print("=" * 50)
+        print("INGESTION DISCIPLINE")
+        print("=" * 50)
+        print("\n⚠️  No action specified.")
+        print("\nAvailable modes:")
+        print("  --validate     Check manifest and files")
+        print("  --dry-run      Preview chunks (no DB writes)")
+        print("  --dry-run --stats  Detailed chunking statistics")
+        print("  --force        Write to Supabase")
+        print("\n❌ Without --force, NO data will be written to Supabase.")
+        sys.exit(1)
+
+    # Strict pre-checks
     print("Course Ingestion Pipeline")
     print("=" * 50)
 
@@ -347,63 +414,63 @@ For test data, use generate_course_data.py (dev only).
     print(f"Manifest: {len(all_lectures)} total lectures")
     print(f"Filter: {filter_desc} -> {len(lectures)} lectures to process")
 
+    # DRY-RUN mode
     if args.dry_run:
         print("\n[DRY-RUN MODE] No data will be written to database\n")
         print("-" * 50)
 
+        results = []
+        for lecture in lectures:
+            result = process_lecture_dry_run(lecture, show_stats=args.stats)
+            results.append(result)
+            if result.get("error"):
+                print(f"  [ERROR] {result['lecture_id']}: {result['error']}")
+            elif args.stats:
+                print(f"  {result['lecture_id']}: {result['chunk_count']} chunks, {result['text_length']} chars")
+            else:
+                print(f"  {result['lecture_id']}: {result['chunks']} chunks ({result['text_length']} chars)")
+
+        if args.stats:
+            print_stats_table(results)
+        else:
+            print("-" * 50)
+            total_chunks = sum(r.get("chunks", r.get("chunk_count", 0)) for r in results if not r.get("error"))
+            errors = [r for r in results if r.get("error")]
+            print(f"\nDRY-RUN SUMMARY:")
+            print(f"  Lectures: {len(lectures)}")
+            print(f"  Total chunks: {total_chunks}")
+            if errors:
+                print(f"  Errors: {len(errors)} lectures failed")
+
+        print("\n💡 To write to Supabase, run with --force")
+        return
+
+    # FORCE mode - actual ingestion
+    if args.force:
+        print("\n⚠️  [FORCE MODE] Writing to Supabase database\n")
+
+        from app.db.supabase_client import get_client
+        from app.embeddings.embedder import embed_query
+        from app.ingest.chunker import chunk_text
+
+        client = get_client()
         total_chunks = 0
-        by_speaker_type = {}
-        by_content_type = {}
         errors = []
 
         for lecture in lectures:
-            result = process_lecture_dry_run(lecture)
-            if result["error"]:
-                errors.append(result)
-                print(f"  [ERROR] {result['lecture_id']}: {result['error']}")
-            else:
-                print(f"  {result['lecture_id']}: {result['chunks']} chunks ({result['text_length']} chars)")
-                total_chunks += result["chunks"]
-                st = result["speaker_type"]
-                by_speaker_type[st] = by_speaker_type.get(st, 0) + result["chunks"]
-                for ct, count in result["content_types"].items():
-                    by_content_type[ct] = by_content_type.get(ct, 0) + count
+            try:
+                count = ingest_lecture(client, lecture, embed_query, chunk_text)
+                total_chunks += count
+            except Exception as e:
+                print(f"    ERROR: {e}")
+                errors.append({"lecture_id": lecture["lecture_id"], "error": str(e)})
 
-        print("-" * 50)
-        print(f"\nDRY-RUN SUMMARY:")
-        print(f"  Lectures: {len(lectures)}")
-        print(f"  Total chunks: {total_chunks}")
-        print(f"  By speaker_type: {by_speaker_type}")
-        print(f"  By content_type: {by_content_type}")
+        print("=" * 50)
+        print(f"Done! Processed {len(lectures)} lectures, {total_chunks} total chunks")
         if errors:
-            print(f"  Errors: {len(errors)} lectures failed")
+            print(f"Errors: {len(errors)} lectures failed")
             for e in errors:
-                print(f"    - {e['lecture_id']}: {e['error']}")
-        return
-
-    # Real ingestion
-    from app.db.supabase_client import get_client
-    from app.embeddings.embedder import embed_query
-    from app.ingest.chunker import chunk_text
-
-    client = get_client()
-    total_chunks = 0
-    errors = []
-
-    for lecture in lectures:
-        try:
-            count = ingest_lecture(client, lecture, embed_query, chunk_text)
-            total_chunks += count
-        except Exception as e:
-            print(f"    ERROR: {e}")
-            errors.append({"lecture_id": lecture["lecture_id"], "error": str(e)})
-
-    print("=" * 50)
-    print(f"Done! Processed {len(lectures)} lectures, {total_chunks} total chunks")
-    if errors:
-        print(f"Errors: {len(errors)} lectures failed")
-        for e in errors:
-            print(f"  - {e['lecture_id']}: {e['error']}")
+                print(f"  - {e['lecture_id']}: {e['error']}")
 
 
 if __name__ == "__main__":
