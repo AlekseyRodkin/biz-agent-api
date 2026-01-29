@@ -186,8 +186,8 @@ LOGIN_PAGE_HTML = """<!DOCTYPE html>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; min-height: 100vh; display: flex; align-items: center; }
-        .login-card { max-width: 400px; margin: auto; }
+        body {{ background-color: #f8f9fa; min-height: 100vh; display: flex; align-items: center; }}
+        .login-card {{ max-width: 400px; margin: auto; }}
     </style>
 </head>
 <body>
