@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
 """
-Generate full course data (100 lectures) for testing.
-Creates manifest CSV and lecture text files.
+⚠️  DEV/TEST ONLY - DO NOT USE IN PRODUCTION ⚠️
+
+Generate fake course data for testing purposes.
+Creates manifest CSV and lecture text files with placeholder content.
+
+This script is NOT called by ingest_course.py.
+It must be run manually and explicitly for development/testing.
 
 Course structure:
 - 4 modules
 - Each module: ~5 days
 - Each day: 4-6 lectures
 - Mix of methodology (Верховский) and case_study (various speakers)
+
+Usage:
+  python scripts/generate_course_data.py
+
+WARNING: This will overwrite data/lectures_manifest.csv and data/course/*.txt
 """
 
 import csv

@@ -3,11 +3,18 @@
 Course ingestion script.
 Reads lectures from manifest, chunks them, computes embeddings, uploads to Supabase.
 
+IMPORTANT: This script requires real course data:
+- data/lectures_manifest.csv (manifest file)
+- data/course/*.txt (lecture text files)
+
+For test data generation, use generate_course_data.py separately (dev only).
+
 Usage:
-  python scripts/ingest_course.py                    # All lectures
-  python scripts/ingest_course.py --module 1         # Module 1 only
+  python scripts/ingest_course.py --validate           # Validate manifest and files
+  python scripts/ingest_course.py --dry-run            # Preview chunks, no DB writes
+  python scripts/ingest_course.py                      # All lectures
+  python scripts/ingest_course.py --module 1           # Module 1 only
   python scripts/ingest_course.py --lecture-id M1-D1-L02  # Single lecture
-  python scripts/ingest_course.py --dry-run          # Preview only, no DB writes
 """
 
 import argparse
@@ -17,21 +24,158 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.ingest.chunker import chunk_text
-
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 MANIFEST_PATH = os.path.join(DATA_DIR, "lectures_manifest.csv")
 COURSE_DIR = os.path.join(DATA_DIR, "course")
 
 
+def check_manifest_exists() -> bool:
+    """Check if manifest file exists."""
+    return os.path.exists(MANIFEST_PATH)
+
+
 def read_manifest() -> list[dict]:
     """Read all lectures from manifest CSV."""
+    if not check_manifest_exists():
+        return []
     lectures = []
     with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             lectures.append(row)
     return lectures
+
+
+def check_lecture_files(lectures: list[dict]) -> tuple[list[str], list[str]]:
+    """Check which lecture files exist and which are missing.
+    Returns (found_files, missing_files).
+    """
+    found = []
+    missing = []
+    for lecture in lectures:
+        filepath = os.path.join(COURSE_DIR, lecture["source_file"])
+        if os.path.exists(filepath):
+            found.append(lecture["source_file"])
+        else:
+            missing.append(lecture["source_file"])
+    return found, missing
+
+
+def validate_manifest(lectures: list[dict]) -> dict:
+    """Validate manifest and return diagnostics."""
+    if not lectures:
+        return {
+            "valid": False,
+            "total_rows": 0,
+            "unique_lecture_ids": 0,
+            "speaker_type_distribution": {},
+            "module_distribution": {},
+            "found_files": [],
+            "missing_files": [],
+            "errors": ["Manifest is empty or not found"]
+        }
+
+    # Count unique lecture_ids
+    lecture_ids = [l["lecture_id"] for l in lectures]
+    unique_ids = set(lecture_ids)
+
+    # Speaker type distribution
+    speaker_dist = {}
+    for l in lectures:
+        st = l.get("speaker_type", "unknown")
+        speaker_dist[st] = speaker_dist.get(st, 0) + 1
+
+    # Module distribution
+    module_dist = {}
+    for l in lectures:
+        m = l.get("module", "unknown")
+        module_dist[m] = module_dist.get(m, 0) + 1
+
+    # Check files
+    found, missing = check_lecture_files(lectures)
+
+    errors = []
+    if len(unique_ids) != len(lecture_ids):
+        errors.append(f"Duplicate lecture_ids found: {len(lecture_ids) - len(unique_ids)} duplicates")
+    if missing:
+        errors.append(f"Missing files: {len(missing)}")
+
+    return {
+        "valid": len(missing) == 0 and len(errors) == 0,
+        "total_rows": len(lectures),
+        "unique_lecture_ids": len(unique_ids),
+        "speaker_type_distribution": speaker_dist,
+        "module_distribution": module_dist,
+        "found_files": found,
+        "missing_files": missing,
+        "errors": errors
+    }
+
+
+def print_validation_report(validation: dict) -> None:
+    """Print validation report."""
+    print("=" * 50)
+    print("MANIFEST VALIDATION REPORT")
+    print("=" * 50)
+
+    if validation["total_rows"] == 0:
+        print("\n❌ VALIDATION FAILED")
+        print("   Manifest is empty or not found")
+        print(f"   Expected: {MANIFEST_PATH}")
+        return
+
+    print(f"\nManifest: {MANIFEST_PATH}")
+    print(f"  Total rows: {validation['total_rows']}")
+    print(f"  Unique lecture_ids: {validation['unique_lecture_ids']}")
+
+    print(f"\nSpeaker type distribution:")
+    for st, count in sorted(validation["speaker_type_distribution"].items()):
+        pct = (count / validation["total_rows"] * 100)
+        print(f"  {st}: {count} ({pct:.1f}%)")
+
+    print(f"\nModule distribution:")
+    for m, count in sorted(validation["module_distribution"].items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0):
+        print(f"  Module {m}: {count} lectures")
+
+    print(f"\nFile check:")
+    print(f"  Found: {len(validation['found_files'])} files")
+    print(f"  Missing: {len(validation['missing_files'])} files")
+
+    if validation["missing_files"]:
+        print(f"\nMissing files:")
+        for f in validation["missing_files"][:10]:
+            print(f"  - {f}")
+        if len(validation["missing_files"]) > 10:
+            print(f"  ... and {len(validation['missing_files']) - 10} more")
+
+    if validation["errors"]:
+        print(f"\n❌ VALIDATION FAILED")
+        for err in validation["errors"]:
+            print(f"   - {err}")
+    else:
+        print(f"\n✅ VALIDATION PASSED")
+        print("   Ready for ingestion")
+
+
+def strict_pre_checks() -> tuple[bool, str]:
+    """Perform strict pre-checks before ingestion.
+    Returns (success, error_message).
+    """
+    # Check manifest exists
+    if not check_manifest_exists():
+        return False, f"Manifest not found: {MANIFEST_PATH}"
+
+    # Read manifest
+    lectures = read_manifest()
+    if not lectures:
+        return False, "Manifest is empty (no lectures)"
+
+    # Check all files exist
+    _, missing = check_lecture_files(lectures)
+    if missing:
+        return False, f"Missing {len(missing)} lecture files. Run --validate for details."
+
+    return True, ""
 
 
 def filter_lectures(lectures: list[dict], lecture_id: str = None, module: int = None) -> list[dict]:
@@ -102,6 +246,8 @@ def insert_chunks(client, lecture: dict, chunks: list[dict], embed_fn) -> int:
 
 def process_lecture_dry_run(lecture: dict) -> dict:
     """Process lecture in dry-run mode (no DB writes)."""
+    from app.ingest.chunker import chunk_text
+
     try:
         text = read_lecture_file(lecture["source_file"])
         chunks = list(chunk_text(text))
@@ -130,12 +276,12 @@ def process_lecture_dry_run(lecture: dict) -> dict:
         }
 
 
-def ingest_lecture(client, lecture: dict, embed_fn) -> int:
+def ingest_lecture(client, lecture: dict, embed_fn, chunk_fn) -> int:
     """Process single lecture: read, chunk, embed, upload."""
     print(f"  Processing: {lecture['lecture_id']} - {lecture['lecture_title']}")
 
     text = read_lecture_file(lecture["source_file"])
-    chunks = list(chunk_text(text))
+    chunks = list(chunk_fn(text))
 
     upsert_lecture(client, lecture)
     delete_old_chunks(client, lecture["lecture_id"])
@@ -151,19 +297,38 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python scripts/ingest_course.py                    # All lectures
-  python scripts/ingest_course.py --module 1         # Module 1 only
+  python scripts/ingest_course.py --validate           # Validate manifest
+  python scripts/ingest_course.py --dry-run            # Preview, no DB writes
+  python scripts/ingest_course.py                      # All lectures
+  python scripts/ingest_course.py --module 1           # Module 1 only
   python scripts/ingest_course.py --lecture-id M1-D1-L02  # Single lecture
-  python scripts/ingest_course.py --dry-run          # Preview, no DB writes
+
+IMPORTANT: Requires real course data in data/ directory.
+For test data, use generate_course_data.py (dev only).
         """
     )
+    parser.add_argument("--validate", action="store_true", help="Validate manifest and files only")
     parser.add_argument("--lecture-id", type=str, help="Process single lecture by ID")
     parser.add_argument("--module", type=int, help="Process all lectures in module")
     parser.add_argument("--dry-run", action="store_true", help="Preview chunks without writing to DB")
     args = parser.parse_args()
 
+    # Validate mode
+    if args.validate:
+        lectures = read_manifest()
+        validation = validate_manifest(lectures)
+        print_validation_report(validation)
+        sys.exit(0 if validation["valid"] else 1)
+
+    # Strict pre-checks for actual ingestion
     print("Course Ingestion Pipeline")
     print("=" * 50)
+
+    success, error = strict_pre_checks()
+    if not success:
+        print(f"\n❌ PRE-CHECK FAILED: {error}")
+        print("\nRun with --validate for detailed diagnostics.")
+        sys.exit(1)
 
     # Read and filter lectures
     all_lectures = read_manifest()
@@ -171,7 +336,7 @@ Examples:
 
     if not lectures:
         print("No lectures found matching criteria")
-        return
+        sys.exit(1)
 
     filter_desc = "all"
     if args.lecture_id:
@@ -187,8 +352,8 @@ Examples:
         print("-" * 50)
 
         total_chunks = 0
-        by_speaker_type = {"methodology": 0, "case_study": 0}
-        by_content_type = {"theory": 0, "assignment": 0, "example": 0, "tool": 0}
+        by_speaker_type = {}
+        by_content_type = {}
         errors = []
 
         for lecture in lectures:
@@ -199,7 +364,8 @@ Examples:
             else:
                 print(f"  {result['lecture_id']}: {result['chunks']} chunks ({result['text_length']} chars)")
                 total_chunks += result["chunks"]
-                by_speaker_type[result["speaker_type"]] = by_speaker_type.get(result["speaker_type"], 0) + result["chunks"]
+                st = result["speaker_type"]
+                by_speaker_type[st] = by_speaker_type.get(st, 0) + result["chunks"]
                 for ct, count in result["content_types"].items():
                     by_content_type[ct] = by_content_type.get(ct, 0) + count
 
@@ -218,6 +384,7 @@ Examples:
     # Real ingestion
     from app.db.supabase_client import get_client
     from app.embeddings.embedder import embed_query
+    from app.ingest.chunker import chunk_text
 
     client = get_client()
     total_chunks = 0
@@ -225,7 +392,7 @@ Examples:
 
     for lecture in lectures:
         try:
-            count = ingest_lecture(client, lecture, embed_query)
+            count = ingest_lecture(client, lecture, embed_query, chunk_text)
             total_chunks += count
         except Exception as e:
             print(f"    ERROR: {e}")
