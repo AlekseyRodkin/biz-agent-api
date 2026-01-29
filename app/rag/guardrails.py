@@ -56,66 +56,55 @@ def validate_plan_exists(plan_id: str, user_id: str) -> dict:
     """Validate architect_plan exists and belongs to user."""
     client = get_client()
 
-    try:
-        result = client.table("company_memory") \
-            .select("id, memory_type, status") \
-            .eq("id", plan_id) \
-            .eq("user_id", user_id) \
-            .maybe_single() \
-            .execute()
-    except Exception:
+    result = client.table("company_memory") \
+        .select("id, memory_type, status") \
+        .eq("id", plan_id) \
+        .eq("user_id", user_id) \
+        .execute()
+
+    if not result.data or len(result.data) == 0:
         raise GuardrailError(f"Plan {plan_id} not found", 404)
 
-    if not result.data:
-        raise GuardrailError(f"Plan {plan_id} not found", 404)
-
-    if result.data.get("memory_type") != "architect_plan":
+    plan = result.data[0]
+    if plan.get("memory_type") != "architect_plan":
         raise GuardrailError(
             f"Memory {plan_id} is not an architect_plan",
             400
         )
 
-    return result.data
+    return plan
 
 
 def validate_metric_exists(metric_id: str, user_id: str) -> dict:
     """Validate metric exists and belongs to user."""
     client = get_client()
 
-    try:
-        result = client.table("metrics") \
-            .select("id, status") \
-            .eq("id", metric_id) \
-            .eq("user_id", user_id) \
-            .maybe_single() \
-            .execute()
-    except Exception:
+    result = client.table("metrics") \
+        .select("id, status") \
+        .eq("id", metric_id) \
+        .eq("user_id", user_id) \
+        .execute()
+
+    if not result.data or len(result.data) == 0:
         raise GuardrailError(f"Metric {metric_id} not found", 404)
 
-    if not result.data:
-        raise GuardrailError(f"Metric {metric_id} not found", 404)
-
-    return result.data
+    return result.data[0]
 
 
 def validate_action_exists(action_id: str, user_id: str) -> dict:
     """Validate action exists and belongs to user."""
     client = get_client()
 
-    try:
-        result = client.table("action_items") \
-            .select("id, status") \
-            .eq("id", action_id) \
-            .eq("user_id", user_id) \
-            .maybe_single() \
-            .execute()
-    except Exception:
+    result = client.table("action_items") \
+        .select("id, status") \
+        .eq("id", action_id) \
+        .eq("user_id", user_id) \
+        .execute()
+
+    if not result.data or len(result.data) == 0:
         raise GuardrailError(f"Action {action_id} not found", 404)
 
-    if not result.data:
-        raise GuardrailError(f"Action {action_id} not found", 404)
-
-    return result.data
+    return result.data[0]
 
 
 # --- Deletion Guards ---
