@@ -10,7 +10,7 @@ def get_course_progress_summary(user_id: str) -> dict:
 
     # Get user progress
     progress = client.table("user_progress") \
-        .select("current_lecture_id, lectures_completed") \
+        .select("current_lecture_id, current_sequence_order, current_module, current_day") \
         .eq("user_id", user_id) \
         .single() \
         .execute()
@@ -26,7 +26,9 @@ def get_course_progress_summary(user_id: str) -> dict:
     current = None
 
     if progress.data:
-        completed = progress.data.get("lectures_completed", 0)
+        # sequence_order is 1-based, so completed = sequence_order - 1
+        seq = progress.data.get("current_sequence_order", 1)
+        completed = max(0, seq - 1)
         current = progress.data.get("current_lecture_id")
 
     progress_pct = round((completed / total_lectures * 100) if total_lectures > 0 else 0, 1)
