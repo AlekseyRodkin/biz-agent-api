@@ -23,12 +23,18 @@ from app.rag.metrics import (
 )
 from app.rag.dashboard import executive_dashboard
 from app.rag.exports import export_decisions, export_actions, export_metrics, export_plans
+from app.rag.guardrails import (
+    GuardrailError, SCHEMA_VERSION,
+    validate_architect_save, validate_metric_create,
+    validate_actions_from_plan, validate_action_block,
+    validate_action_link_metric, check_duplicate_plan, check_duplicate_metric
+)
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.5.0"
+    version="1.6.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -111,7 +117,8 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.5.0"
+        "version": "1.6.0",
+        "schema_version": SCHEMA_VERSION
     }
 
 
@@ -281,7 +288,18 @@ async def architect_session_endpoint(request: ArchitectSessionRequest):
 async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest):
     """Save architect plan to memory."""
     try:
-        plan_id = save_architect_plan(USER_ID, request.plan, request.goal)
+        # Guardrails: validate input
+        goal, plan = validate_architect_save(request.goal, request.plan)
+
+        # Guardrails: check for duplicates
+        duplicate_id = check_duplicate_plan(USER_ID, goal)
+        if duplicate_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Similar plan already exists (id: {duplicate_id}). Use refine or create with different goal."
+            )
+
+        plan_id = save_architect_plan(USER_ID, plan, goal)
         if not plan_id:
             raise HTTPException(status_code=500, detail="Failed to save plan")
         return {
@@ -289,6 +307,8 @@ async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest):
             "plan_id": str(plan_id),
             "message": "Архитектурный план сохранён"
         }
+    except GuardrailError as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
     except HTTPException:
         raise
     except Exception as e:
@@ -299,6 +319,9 @@ async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest):
 async def actions_from_plan_endpoint(request: ActionsFromPlanRequest):
     """Generate action items from an architect plan."""
     try:
+        # Guardrails: validate plan exists and is architect_plan
+        validate_actions_from_plan(request.plan_id, USER_ID)
+
         actions = create_actions_from_plan(USER_ID, request.plan_id)
         if not actions:
             raise HTTPException(status_code=400, detail="No actions could be parsed from plan")
@@ -310,6 +333,8 @@ async def actions_from_plan_endpoint(request: ActionsFromPlanRequest):
                 for a in actions
             ]
         }
+    except GuardrailError as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
     except HTTPException:
         raise
     except Exception as e:
@@ -386,10 +411,15 @@ async def complete_action_endpoint(action_id: str, request: ActionCompleteReques
 async def block_action_endpoint(action_id: str, request: ActionBlockRequest):
     """Set action status to blocked."""
     try:
-        action = block_action(USER_ID, action_id, request.reason)
+        # Guardrails: validate reason is not empty
+        reason = validate_action_block(request.reason)
+
+        action = block_action(USER_ID, action_id, reason)
         if not action:
             raise HTTPException(status_code=404, detail="Action not found")
         return {"status": "ok", "action": action}
+    except GuardrailError as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
     except HTTPException:
         raise
     except Exception as e:
@@ -420,6 +450,22 @@ async def weekly_review_endpoint():
 async def create_metric_endpoint(request: MetricCreateRequest):
     """Create a new metric for tracking outcomes."""
     try:
+        # Guardrails: validate input
+        validate_metric_create(
+            request.name,
+            request.scope,
+            request.related_plan_id,
+            USER_ID
+        )
+
+        # Guardrails: check for duplicates
+        duplicate_id = check_duplicate_metric(USER_ID, request.name)
+        if duplicate_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Metric with same name already exists (id: {duplicate_id})"
+            )
+
         metric = create_metric(
             USER_ID,
             request.name,
@@ -434,6 +480,8 @@ async def create_metric_endpoint(request: MetricCreateRequest):
         if not metric:
             raise HTTPException(status_code=500, detail="Failed to create metric")
         return {"status": "ok", "metric": metric}
+    except GuardrailError as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
     except HTTPException:
         raise
     except Exception as e:
@@ -492,10 +540,15 @@ async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest):
 async def link_action_metric_endpoint(action_id: str, request: ActionLinkMetricRequest):
     """Link an action to a metric."""
     try:
+        # Guardrails: validate both action and metric exist
+        validate_action_link_metric(action_id, request.metric_id, USER_ID)
+
         action = link_action_to_metric(USER_ID, action_id, request.metric_id)
         if not action:
             raise HTTPException(status_code=404, detail="Action not found")
         return {"status": "ok", "action": action}
+    except GuardrailError as e:
+        raise HTTPException(status_code=e.code, detail=e.message)
     except HTTPException:
         raise
     except Exception as e:
