@@ -9,7 +9,7 @@ Expected time: 10-15 minutes.
 
 ```bash
 # Set base URL
-export BASE_URL="http://89.104.70.108:8000"
+export BASE_URL="http://5.129.224.93:8000"
 # or for local: export BASE_URL="http://localhost:8000"
 ```
 
