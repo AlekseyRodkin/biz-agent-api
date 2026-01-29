@@ -34,7 +34,7 @@ from app.config import USER_ID
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.6.0"
+    version="1.7.1"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -117,7 +117,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.6.0",
+        "version": "1.7.1",
         "schema_version": SCHEMA_VERSION
     }
 
@@ -631,6 +631,12 @@ async def export_plans_endpoint(format: str = "json"):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/ui/exec")
+async def serve_exec_ui():
+    """Executive Dashboard UI with Bootstrap."""
+    return FileResponse(os.path.join(STATIC_DIR, "exec.html"))
 
 
 @app.get("/")

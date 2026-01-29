@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executive Dashboard | Biz Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { margin-bottom: 1rem; }
+        .risk-critical { border-left: 4px solid #dc3545; }
+        .risk-warning { border-left: 4px solid #ffc107; }
+        .metric-off-track { background-color: #fff3cd; }
+        .metric-on-track { background-color: #d1e7dd; }
+        .refresh-spinner { display: none; }
+        .refresh-spinner.active { display: inline-block; }
+        .last-update { font-size: 0.8rem; color: #6c757d; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-speedometer2"></i> Executive Dashboard
+            </span>
+            <span class="text-light">
+                <span class="refresh-spinner spinner-border spinner-border-sm" role="status"></span>
+                <span class="last-update" id="lastUpdate"></span>
+            </span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Error Alert -->
+        <div class="alert alert-danger d-none" id="errorAlert" role="alert">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span id="errorMessage"></span>
+        </div>
+
+        <!-- Version Info -->
+        <div class="row mb-3">
+            <div class="col">
+                <small class="text-muted">
+                    API: <span id="apiVersion">-</span> | Schema: <span id="schemaVersion">-</span> | User: <span id="userId">-</span>
+                </small>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="row mb-4">
+            <div class="col">
+                <div class="btn-group me-2" role="group">
+                    <a href="/ritual/daily" target="_blank" class="btn btn-outline-primary">
+                        <i class="bi bi-sun"></i> Daily Focus
+                    </a>
+                    <a href="/ritual/weekly" target="_blank" class="btn btn-outline-primary">
+                        <i class="bi bi-calendar-week"></i> Weekly Review
+                    </a>
+                </div>
+                <div class="btn-group" role="group">
+                    <a href="/export/actions?format=csv" class="btn btn-outline-secondary" download>
+                        <i class="bi bi-filetype-csv"></i> Actions CSV
+                    </a>
+                    <a href="/export/metrics?format=md" class="btn btn-outline-secondary" download>
+                        <i class="bi bi-filetype-md"></i> Metrics MD
+                    </a>
+                    <a href="/export/plans?format=json" class="btn btn-outline-secondary" download>
+                        <i class="bi bi-filetype-json"></i> Plans JSON
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Course Progress -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-book"></i> Course Progress
+                    </div>
+                    <div class="card-body">
+                        <h2 class="card-title" id="coursePercent">--%</h2>
+                        <div class="progress mb-2" style="height: 20px;">
+                            <div class="progress-bar" id="courseProgressBar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <p class="card-text text-muted">
+                            <span id="courseCompleted">-</span> / <span id="courseTotal">-</span> lectures
+                        </p>
+                        <small class="text-muted">Current: <span id="currentLecture">-</span></small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions Summary -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-check2-square"></i> Actions
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-3">
+                            <span class="badge bg-secondary fs-6" id="actionsTotal">0 total</span>
+                            <span class="badge bg-success fs-6" id="actionsDone">0 done</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-3">
+                            <span class="badge bg-primary fs-6" id="actionsInProgress">0 in progress</span>
+                            <span class="badge bg-warning text-dark fs-6" id="actionsBlocked">0 blocked</span>
+                        </div>
+                        <p class="card-text text-muted">
+                            Done this week: <strong id="actionsDoneThisWeek">0</strong>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metrics Summary -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-graph-up"></i> Metrics
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-3">
+                            <span class="badge bg-secondary fs-6" id="metricsTotal">0 total</span>
+                            <span class="badge bg-success fs-6" id="metricsOnTrack">0 on track</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="badge bg-warning text-dark fs-6" id="metricsOffTrack">0 off track</span>
+                            <span class="badge bg-primary fs-6" id="metricsExceeded">0 exceeded</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Active Plans -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-diagram-3"></i> Active Plans
+                    </div>
+                    <ul class="list-group list-group-flush" id="plansList">
+                        <li class="list-group-item text-muted">Loading...</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Key Risks -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-danger text-white">
+                        <i class="bi bi-exclamation-diamond"></i> Key Risks
+                    </div>
+                    <div class="card-body" id="risksList">
+                        <p class="text-muted">Loading...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blocked Actions Details -->
+        <div class="row mt-3" id="blockedSection" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        <i class="bi bi-slash-circle"></i> Blocked Actions
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Reason</th>
+                                    <th>Days</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="blockedTable">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center text-muted py-4">
+        <small>Biz Agent API v<span id="footerVersion">1.7.1</span> | Auto-refresh: 60s</small>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE = '';
+        let refreshInterval;
+
+        async function fetchDashboard() {
+            const spinner = document.querySelector('.refresh-spinner');
+            spinner.classList.add('active');
+
+            try {
+                const response = await fetch(`${API_BASE}/dashboard/exec`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                renderDashboard(data);
+                hideError();
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                spinner.classList.remove('active');
+                document.getElementById('lastUpdate').textContent =
+                    'Updated: ' + new Date().toLocaleTimeString();
+            }
+        }
+
+        function renderDashboard(data) {
+            // Version info
+            document.getElementById('apiVersion').textContent = data.api_version || '-';
+            document.getElementById('schemaVersion').textContent = data.schema_version || '-';
+            document.getElementById('userId').textContent = data.user_id || '-';
+            document.getElementById('footerVersion').textContent = data.api_version || '1.7.1';
+
+            // Course progress
+            const course = data.course_progress || {};
+            const percent = course.progress_percent || 0;
+            document.getElementById('coursePercent').textContent = percent + '%';
+            document.getElementById('courseProgressBar').style.width = percent + '%';
+            document.getElementById('courseProgressBar').textContent = percent + '%';
+            document.getElementById('courseCompleted').textContent = course.completed || 0;
+            document.getElementById('courseTotal').textContent = course.total_lectures || 0;
+            document.getElementById('currentLecture').textContent = course.current_lecture || '-';
+
+            // Actions
+            const actions = data.actions || {};
+            document.getElementById('actionsTotal').textContent = (actions.total || 0) + ' total';
+            document.getElementById('actionsDone').textContent = (actions.done || 0) + ' done';
+            document.getElementById('actionsInProgress').textContent = (actions.in_progress || 0) + ' in progress';
+            document.getElementById('actionsBlocked').textContent = (actions.blocked || 0) + ' blocked';
+            document.getElementById('actionsDoneThisWeek').textContent = actions.done_this_period || 0;
+
+            // Blocked details
+            const blockedDetails = actions.blocked_details || [];
+            if (blockedDetails.length > 0) {
+                document.getElementById('blockedSection').style.display = 'block';
+                const tbody = document.getElementById('blockedTable');
+                tbody.innerHTML = blockedDetails.map(b => `
+                    <tr class="${b.critical ? 'table-danger' : ''}">
+                        <td>${b.id.substring(0, 8)}...</td>
+                        <td>${escapeHtml(b.reason)}</td>
+                        <td>${b.days_blocked}</td>
+                        <td>${b.critical ? '<span class="badge bg-danger">CRITICAL</span>' : '<span class="badge bg-warning text-dark">Warning</span>'}</td>
+                    </tr>
+                `).join('');
+            } else {
+                document.getElementById('blockedSection').style.display = 'none';
+            }
+
+            // Metrics
+            const metrics = data.metrics || {};
+            document.getElementById('metricsTotal').textContent = (metrics.total || 0) + ' total';
+            document.getElementById('metricsOnTrack').textContent = (metrics.on_track || 0) + ' on track';
+            document.getElementById('metricsOffTrack').textContent = (metrics.off_track || 0) + ' off track';
+            document.getElementById('metricsExceeded').textContent = (metrics.exceeded || 0) + ' exceeded';
+
+            // Active plans
+            const plans = data.active_plans || [];
+            const plansList = document.getElementById('plansList');
+            if (plans.length > 0) {
+                plansList.innerHTML = plans.map(p => `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span>${escapeHtml(p.title)}</span>
+                        <small class="text-muted">${formatDate(p.created_at)}</small>
+                    </li>
+                `).join('');
+            } else {
+                plansList.innerHTML = '<li class="list-group-item text-muted">No active plans</li>';
+            }
+
+            // Key risks
+            const risks = data.key_risks || [];
+            const risksList = document.getElementById('risksList');
+            if (risks.length > 0) {
+                risksList.innerHTML = risks.map(r => `
+                    <div class="alert ${r.severity === 'critical' ? 'alert-danger risk-critical' : 'alert-warning risk-warning'} py-2 mb-2">
+                        <strong>${r.type === 'blocked_action' ? '<i class="bi bi-slash-circle"></i> Blocked' : '<i class="bi bi-graph-down"></i> Off Track'}:</strong>
+                        ${escapeHtml(r.title)}
+                        ${r.reason ? `<br><small class="text-muted">${escapeHtml(r.reason)}</small>` : ''}
+                        ${r.progress_percent !== undefined ? `<br><small>Progress: ${r.progress_percent}%</small>` : ''}
+                    </div>
+                `).join('');
+            } else {
+                risksList.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> No risks detected</div>';
+            }
+        }
+
+        function showError(message) {
+            const alert = document.getElementById('errorAlert');
+            document.getElementById('errorMessage').textContent = message;
+            alert.classList.remove('d-none');
+        }
+
+        function hideError() {
+            document.getElementById('errorAlert').classList.add('d-none');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(isoDate) {
+            if (!isoDate) return '-';
+            const date = new Date(isoDate);
+            return date.toLocaleDateString('ru-RU');
+        }
+
+        // Initial load
+        fetchDashboard();
+
+        // Auto-refresh every 60 seconds
+        refreshInterval = setInterval(fetchDashboard, 60000);
+    </script>
+</body>
+</html>
