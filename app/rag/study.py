@@ -6,6 +6,7 @@ from app.embeddings.embedder import embed_query
 from app.llm.deepseek_client import chat_completion
 from app.config import USER_ID
 from app.rag.decisions import detect_conflicts, build_conflict_context
+from app.rag.course_map import build_navigation_block
 
 
 STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансформация бизнеса с ИИ".
@@ -291,6 +292,11 @@ def study_next(user_id: str) -> dict:
     # Update progress
     last_chunk = chunks[-1]
     update_progress(user_id, last_chunk["lecture_id"], last_chunk["sequence_order"])
+
+    # Add navigation block to answer
+    navigation = build_navigation_block(user_id)
+    if navigation:
+        answer = f"{answer}\n\n{navigation}"
 
     return {
         "answer": answer,

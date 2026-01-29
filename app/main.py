@@ -9,12 +9,13 @@ from typing import Optional
 from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, reset_progress, process_user_answer, get_user_progress
 from app.rag.decisions import decisions_review, refine_decision
+from app.rag.course_map import get_course_map, get_course_progress
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="0.6.0"
+    version="0.9.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -45,7 +46,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "0.6.0"
+        "version": "0.9.0"
     }
 
 
@@ -128,6 +129,26 @@ async def decisions_refine_endpoint(request: RefineRequest):
         return result
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/course/map")
+async def course_map_endpoint():
+    """Get full course structure: modules → days → lectures."""
+    try:
+        result = get_course_map()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/course/progress")
+async def course_progress_endpoint():
+    """Get user progress with percentages and navigation preview."""
+    try:
+        result = get_course_progress(USER_ID)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
