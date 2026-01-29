@@ -56,12 +56,15 @@ def validate_plan_exists(plan_id: str, user_id: str) -> dict:
     """Validate architect_plan exists and belongs to user."""
     client = get_client()
 
-    result = client.table("company_memory") \
-        .select("id, memory_type, status") \
-        .eq("id", plan_id) \
-        .eq("user_id", user_id) \
-        .single() \
-        .execute()
+    try:
+        result = client.table("company_memory") \
+            .select("id, memory_type, status") \
+            .eq("id", plan_id) \
+            .eq("user_id", user_id) \
+            .maybe_single() \
+            .execute()
+    except Exception:
+        raise GuardrailError(f"Plan {plan_id} not found", 404)
 
     if not result.data:
         raise GuardrailError(f"Plan {plan_id} not found", 404)
@@ -79,12 +82,15 @@ def validate_metric_exists(metric_id: str, user_id: str) -> dict:
     """Validate metric exists and belongs to user."""
     client = get_client()
 
-    result = client.table("metrics") \
-        .select("id, status") \
-        .eq("id", metric_id) \
-        .eq("user_id", user_id) \
-        .single() \
-        .execute()
+    try:
+        result = client.table("metrics") \
+            .select("id, status") \
+            .eq("id", metric_id) \
+            .eq("user_id", user_id) \
+            .maybe_single() \
+            .execute()
+    except Exception:
+        raise GuardrailError(f"Metric {metric_id} not found", 404)
 
     if not result.data:
         raise GuardrailError(f"Metric {metric_id} not found", 404)
@@ -96,12 +102,15 @@ def validate_action_exists(action_id: str, user_id: str) -> dict:
     """Validate action exists and belongs to user."""
     client = get_client()
 
-    result = client.table("action_items") \
-        .select("id, status") \
-        .eq("id", action_id) \
-        .eq("user_id", user_id) \
-        .single() \
-        .execute()
+    try:
+        result = client.table("action_items") \
+            .select("id, status") \
+            .eq("id", action_id) \
+            .eq("user_id", user_id) \
+            .maybe_single() \
+            .execute()
+    except Exception:
+        raise GuardrailError(f"Action {action_id} not found", 404)
 
     if not result.data:
         raise GuardrailError(f"Action {action_id} not found", 404)
