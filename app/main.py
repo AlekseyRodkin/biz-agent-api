@@ -24,6 +24,7 @@ from app.rag.metrics import (
 )
 from app.rag.dashboard import executive_dashboard
 from app.rag.exports import export_decisions, export_actions, export_metrics, export_plans
+from app.rag.chat import get_history, process_chat_message, get_chat_status
 from app.rag.guardrails import (
     GuardrailError, SCHEMA_VERSION,
     validate_architect_save, validate_metric_create,
@@ -35,7 +36,7 @@ from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESS
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.9.0"
+    version="2.0.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -159,7 +160,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.9.0",
+        "version": "2.0.0",
         "schema_version": SCHEMA_VERSION
     }
 
@@ -772,6 +773,64 @@ async def export_plans_endpoint(format: str = "json", _: str = Depends(require_s
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class ChatSendRequest(BaseModel):
+    mode: str  # ask, study, architect
+    message: str
+
+
+@app.get("/chat/history")
+async def chat_history_endpoint(
+    mode: Optional[str] = None,
+    limit: int = 50,
+    _: str = Depends(require_session)
+):
+    """Get chat history, optionally filtered by mode. Requires session."""
+    try:
+        if mode and mode not in ["ask", "study", "architect"]:
+            raise HTTPException(status_code=400, detail="Invalid mode. Use: ask, study, architect")
+        messages = get_history(USER_ID, mode, limit)
+        return {"messages": messages, "total": len(messages)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/send")
+async def chat_send_endpoint(request: ChatSendRequest, _: str = Depends(require_session)):
+    """Send a chat message and get response. Requires session."""
+    try:
+        if request.mode not in ["ask", "study", "architect"]:
+            raise HTTPException(status_code=400, detail="Invalid mode. Use: ask, study, architect")
+        if not request.message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        result = process_chat_message(USER_ID, request.mode, request.message)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chat/status")
+async def chat_status_endpoint(_: str = Depends(require_session)):
+    """Get chat status info for UI header. Requires session."""
+    try:
+        status = get_chat_status(USER_ID)
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/app")
+async def serve_app_ui(session: Optional[str] = Cookie(None)):
+    """Chat App UI - main interface. Requires session."""
+    user = verify_session_cookie(session)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    return FileResponse(os.path.join(STATIC_DIR, "app.html"))
 
 
 @app.get("/ui/exec")

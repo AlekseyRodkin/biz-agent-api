@@ -1,4 +1,4 @@
-# API Contract v1.9.0
+# API Contract v2.0.0
 
 ## Overview
 
@@ -51,6 +51,10 @@ GET /auth/status
 
 | Endpoint | Method |
 |----------|--------|
+| `/app` | GET |
+| `/chat/history` | GET |
+| `/chat/send` | POST |
+| `/chat/status` | GET |
 | `/dashboard/exec` | GET |
 | `/export/decisions` | GET |
 | `/export/actions` | GET |
@@ -155,10 +159,47 @@ process     # Single process
 {
   "status": "ok",
   "timestamp": "ISO8601",
-  "version": "1.8.0",
-  "schema_version": "0006"
+  "version": "2.0.0",
+  "schema_version": "0007"
 }
 ```
+
+---
+
+### Chat (v2.0.0)
+
+| Endpoint | Method | Required Fields | Description |
+|----------|--------|-----------------|-------------|
+| `/chat/history` | GET | - | Get message history |
+| `/chat/send` | POST | `mode`, `message` | Send message |
+| `/chat/status` | GET | - | Get chat status |
+
+**Query params for `/chat/history`:**
+- `mode` (optional): `ask`, `study`, `architect`
+- `limit` (optional): number (default: 50)
+
+**POST /chat/send Request:**
+```json
+{
+  "mode": "ask|study|architect",
+  "message": "string"
+}
+```
+
+**POST /chat/send Response:**
+```json
+{
+  "role": "assistant",
+  "content": "AI response text",
+  "metadata": {"sources": {...}},
+  "mode": "ask"
+}
+```
+
+**Modes:**
+- `ask` - Q&A about AI implementation
+- `study` - Sequential learning (commands: start, next, or answer)
+- `architect` - Generate implementation plans
 
 ---
 
@@ -394,3 +435,4 @@ process     # Single process
 | 1.8.2 | 0006 | Token rotation, /auth/status |
 | 1.8.3 | 0006 | Security rules, scan_secrets.sh |
 | 1.9.0 | 0006 | Session auth (cookie), login/logout, remove tokens |
+| 2.0.0 | 0007 | Chat UI /app, conversation history, chat_messages table |
