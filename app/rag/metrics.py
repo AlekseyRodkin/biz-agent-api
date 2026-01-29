@@ -217,7 +217,7 @@ def calculate_impact(user_id: str) -> dict:
 
 
 def get_metrics_for_weekly(user_id: str) -> str:
-    """Get metrics context for weekly review."""
+    """Get metrics context for weekly review (off-track first)."""
     impact = calculate_impact(user_id)
 
     if not impact["metrics"]:
@@ -225,7 +225,13 @@ def get_metrics_for_weekly(user_id: str) -> str:
 
     lines = ["[ЭФФЕКТ ЗА НЕДЕЛЮ]"]
 
-    for m in impact["metrics"]:
+    # Sort: off_track first, then others
+    sorted_metrics = sorted(
+        impact["metrics"],
+        key=lambda x: 0 if x["status"] == "off_track" else 1
+    )
+
+    for m in sorted_metrics:
         name = m["name"]
         unit = m.get("unit") or ""
         delta = m.get("delta")
@@ -244,8 +250,12 @@ def get_metrics_for_weekly(user_id: str) -> str:
                 else:
                     change_str = f"{delta} {unit}".strip()
 
-            status_emoji = "✅" if status in ["on_track", "exceeded"] else "⚠️" if status == "off_track" else ""
-            lines.append(f"- {name}: {change_str} {status_emoji}")
+            if status == "off_track":
+                lines.append(f"- ⚠️ {name}: {change_str} (OFF TRACK)")
+            elif status in ["on_track", "exceeded"]:
+                lines.append(f"- ✅ {name}: {change_str}")
+            else:
+                lines.append(f"- {name}: {change_str}")
         else:
             lines.append(f"- {name}: без изменений")
 

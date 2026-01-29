@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from datetime import datetime
 import os
@@ -21,12 +21,14 @@ from app.rag.metrics import (
     create_metric, get_metrics, get_metric, update_metric_value,
     calculate_impact, link_action_to_metric, get_metrics_for_action
 )
+from app.rag.dashboard import executive_dashboard
+from app.rag.exports import export_decisions, export_actions, export_metrics, export_plans
 from app.config import USER_ID
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.4.0"
+    version="1.5.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -109,7 +111,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.4.0"
+        "version": "1.5.0"
     }
 
 
@@ -508,6 +510,72 @@ async def get_action_metric_endpoint(action_id: str):
         if not metric:
             return {"status": "ok", "metric": None, "message": "No metric linked"}
         return {"status": "ok", "metric": metric}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/dashboard/exec")
+async def executive_dashboard_endpoint():
+    """Get executive dashboard with aggregated data."""
+    try:
+        result = executive_dashboard(USER_ID)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/export/decisions")
+async def export_decisions_endpoint(format: str = "json"):
+    """Export all decisions in JSON, CSV, or Markdown format."""
+    try:
+        result = export_decisions(USER_ID, format)
+        if format == "csv":
+            return PlainTextResponse(content=result, media_type="text/csv")
+        if format == "md":
+            return PlainTextResponse(content=result, media_type="text/markdown")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/export/actions")
+async def export_actions_endpoint(format: str = "json"):
+    """Export all actions in JSON, CSV, or Markdown format."""
+    try:
+        result = export_actions(USER_ID, format)
+        if format == "csv":
+            return PlainTextResponse(content=result, media_type="text/csv")
+        if format == "md":
+            return PlainTextResponse(content=result, media_type="text/markdown")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/export/metrics")
+async def export_metrics_endpoint(format: str = "json"):
+    """Export all metrics in JSON, CSV, or Markdown format."""
+    try:
+        result = export_metrics(USER_ID, format)
+        if format == "csv":
+            return PlainTextResponse(content=result, media_type="text/csv")
+        if format == "md":
+            return PlainTextResponse(content=result, media_type="text/markdown")
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/export/plans")
+async def export_plans_endpoint(format: str = "json"):
+    """Export all architect plans in JSON, CSV, or Markdown format."""
+    try:
+        result = export_plans(USER_ID, format)
+        if format == "csv":
+            return PlainTextResponse(content=result, media_type="text/csv")
+        if format == "md":
+            return PlainTextResponse(content=result, media_type="text/markdown")
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

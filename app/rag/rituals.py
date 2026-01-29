@@ -122,9 +122,9 @@ def get_actions_for_weekly(user_id: str) -> dict:
         .eq("status", "planned") \
         .execute()
 
-    # Get blocked
+    # Get blocked (include created_at for critical detection)
     blocked = client.table("action_items") \
-        .select("id, title, day_range, block_reason") \
+        .select("id, title, day_range, block_reason, created_at") \
         .eq("user_id", user_id) \
         .eq("status", "blocked") \
         .execute()
@@ -210,12 +210,32 @@ def build_weekly_context(data: dict, metrics_context: str = "") -> str:
     else:
         parts.append("- Нет")
 
-    # Blocked
+    # Blocked (with critical detection)
     parts.append("\nЗАБЛОКИРОВАНО:")
     if data["blocked"]:
+        critical_blockers = []
+        normal_blockers = []
+
         for a in data["blocked"]:
             reason = a.get("block_reason", "причина не указана")
-            parts.append(f"- {a['title']} — {reason}")
+            created = a.get("created_at", "")
+            days_blocked = 0
+
+            if created:
+                try:
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    days_blocked = (datetime.utcnow() - created_dt.replace(tzinfo=None)).days
+                except (ValueError, TypeError):
+                    pass
+
+            if days_blocked >= 3:
+                critical_blockers.append(f"- 🔴 КРИТИЧНО ({days_blocked} дн.): {a['title']} — {reason}")
+            else:
+                normal_blockers.append(f"- {a['title']} — {reason}")
+
+        # Critical first
+        parts.extend(critical_blockers)
+        parts.extend(normal_blockers)
     else:
         parts.append("- Нет")
 
