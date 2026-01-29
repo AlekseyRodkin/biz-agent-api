@@ -13,3 +13,5 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 
 USER_ID = os.getenv("USER_ID", "alexey")
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")

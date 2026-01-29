@@ -1,6 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, HTMLResponse
 from pydantic import BaseModel
 from datetime import datetime
 import os
@@ -29,15 +29,35 @@ from app.rag.guardrails import (
     validate_actions_from_plan, validate_action_block,
     validate_action_link_metric, check_duplicate_plan, check_duplicate_metric
 )
-from app.config import USER_ID
+from app.config import USER_ID, ADMIN_TOKEN
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="1.7.1"
+    version="1.8.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
+
+
+def require_admin_token(x_admin_token: Optional[str] = Header(None)) -> str:
+    """Dependency to validate admin token."""
+    if not ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_TOKEN not configured on server"
+        )
+    if not x_admin_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing X-Admin-Token header"
+        )
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin token"
+        )
+    return x_admin_token
 
 
 class AskRequest(BaseModel):
@@ -117,7 +137,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.7.1",
+        "version": "1.8.0",
         "schema_version": SCHEMA_VERSION
     }
 
@@ -240,8 +260,8 @@ async def module_review_endpoint(request: ModuleReviewRequest):
 
 
 @app.post("/module/summary")
-async def module_summary_endpoint(request: ModuleSummaryRequest):
-    """Save module summary to memory."""
+async def module_summary_endpoint(request: ModuleSummaryRequest, _: str = Depends(require_admin_token)):
+    """Save module summary to memory. Requires admin token."""
     try:
         summary_id = save_module_summary(USER_ID, request.module, request.summary)
         if not summary_id:
@@ -285,8 +305,8 @@ async def architect_session_endpoint(request: ArchitectSessionRequest):
 
 
 @app.post("/session/architect/save")
-async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest):
-    """Save architect plan to memory."""
+async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest, _: str = Depends(require_admin_token)):
+    """Save architect plan to memory. Requires admin token."""
     try:
         # Guardrails: validate input
         goal, plan = validate_architect_save(request.goal, request.plan)
@@ -316,8 +336,8 @@ async def architect_plan_save_endpoint(request: ArchitectPlanSaveRequest):
 
 
 @app.post("/actions/from-plan")
-async def actions_from_plan_endpoint(request: ActionsFromPlanRequest):
-    """Generate action items from an architect plan."""
+async def actions_from_plan_endpoint(request: ActionsFromPlanRequest, _: str = Depends(require_admin_token)):
+    """Generate action items from an architect plan. Requires admin token."""
     try:
         # Guardrails: validate plan exists and is architect_plan
         validate_actions_from_plan(request.plan_id, USER_ID)
@@ -379,8 +399,8 @@ async def get_action_endpoint(action_id: str):
 
 
 @app.post("/actions/{action_id}/start")
-async def start_action_endpoint(action_id: str):
-    """Set action status to in_progress."""
+async def start_action_endpoint(action_id: str, _: str = Depends(require_admin_token)):
+    """Set action status to in_progress. Requires admin token."""
     try:
         action = start_action(USER_ID, action_id)
         if not action:
@@ -393,8 +413,8 @@ async def start_action_endpoint(action_id: str):
 
 
 @app.post("/actions/{action_id}/complete")
-async def complete_action_endpoint(action_id: str, request: ActionCompleteRequest = None):
-    """Set action status to done."""
+async def complete_action_endpoint(action_id: str, request: ActionCompleteRequest = None, _: str = Depends(require_admin_token)):
+    """Set action status to done. Requires admin token."""
     try:
         result_text = request.result if request else None
         action = complete_action(USER_ID, action_id, result_text)
@@ -408,8 +428,8 @@ async def complete_action_endpoint(action_id: str, request: ActionCompleteReques
 
 
 @app.post("/actions/{action_id}/block")
-async def block_action_endpoint(action_id: str, request: ActionBlockRequest):
-    """Set action status to blocked."""
+async def block_action_endpoint(action_id: str, request: ActionBlockRequest, _: str = Depends(require_admin_token)):
+    """Set action status to blocked. Requires admin token."""
     try:
         # Guardrails: validate reason is not empty
         reason = validate_action_block(request.reason)
@@ -447,8 +467,8 @@ async def weekly_review_endpoint():
 
 
 @app.post("/metrics/create")
-async def create_metric_endpoint(request: MetricCreateRequest):
-    """Create a new metric for tracking outcomes."""
+async def create_metric_endpoint(request: MetricCreateRequest, _: str = Depends(require_admin_token)):
+    """Create a new metric for tracking outcomes. Requires admin token."""
     try:
         # Guardrails: validate input
         validate_metric_create(
@@ -523,8 +543,8 @@ async def get_metric_endpoint(metric_id: str):
 
 
 @app.post("/metrics/{metric_id}/update")
-async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest):
-    """Update the current value of a metric."""
+async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest, _: str = Depends(require_admin_token)):
+    """Update the current value of a metric. Requires admin token."""
     try:
         metric = update_metric_value(USER_ID, metric_id, request.current_value)
         if not metric:
@@ -537,8 +557,8 @@ async def update_metric_endpoint(metric_id: str, request: MetricUpdateRequest):
 
 
 @app.post("/actions/{action_id}/link-metric")
-async def link_action_metric_endpoint(action_id: str, request: ActionLinkMetricRequest):
-    """Link an action to a metric."""
+async def link_action_metric_endpoint(action_id: str, request: ActionLinkMetricRequest, _: str = Depends(require_admin_token)):
+    """Link an action to a metric. Requires admin token."""
     try:
         # Guardrails: validate both action and metric exist
         validate_action_link_metric(action_id, request.metric_id, USER_ID)
@@ -568,8 +588,8 @@ async def get_action_metric_endpoint(action_id: str):
 
 
 @app.get("/dashboard/exec")
-async def executive_dashboard_endpoint():
-    """Get executive dashboard with aggregated data."""
+async def executive_dashboard_endpoint(_: str = Depends(require_admin_token)):
+    """Get executive dashboard with aggregated data. Requires admin token."""
     try:
         result = executive_dashboard(USER_ID)
         return result
@@ -578,8 +598,8 @@ async def executive_dashboard_endpoint():
 
 
 @app.get("/export/decisions")
-async def export_decisions_endpoint(format: str = "json"):
-    """Export all decisions in JSON, CSV, or Markdown format."""
+async def export_decisions_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+    """Export all decisions in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_decisions(USER_ID, format)
         if format == "csv":
@@ -592,8 +612,8 @@ async def export_decisions_endpoint(format: str = "json"):
 
 
 @app.get("/export/actions")
-async def export_actions_endpoint(format: str = "json"):
-    """Export all actions in JSON, CSV, or Markdown format."""
+async def export_actions_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+    """Export all actions in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_actions(USER_ID, format)
         if format == "csv":
@@ -606,8 +626,8 @@ async def export_actions_endpoint(format: str = "json"):
 
 
 @app.get("/export/metrics")
-async def export_metrics_endpoint(format: str = "json"):
-    """Export all metrics in JSON, CSV, or Markdown format."""
+async def export_metrics_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+    """Export all metrics in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_metrics(USER_ID, format)
         if format == "csv":
@@ -620,8 +640,8 @@ async def export_metrics_endpoint(format: str = "json"):
 
 
 @app.get("/export/plans")
-async def export_plans_endpoint(format: str = "json"):
-    """Export all architect plans in JSON, CSV, or Markdown format."""
+async def export_plans_endpoint(format: str = "json", _: str = Depends(require_admin_token)):
+    """Export all architect plans in JSON, CSV, or Markdown format. Requires admin token."""
     try:
         result = export_plans(USER_ID, format)
         if format == "csv":

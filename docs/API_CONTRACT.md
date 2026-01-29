@@ -1,9 +1,73 @@
-# API Contract v1.6.0
+# API Contract v1.8.0
 
 ## Overview
 
 This document defines the stable API contracts for Biz Agent API.
 Breaking changes require version bump and migration.
+
+---
+
+## Authentication
+
+### Admin Token
+
+Protected endpoints require `X-Admin-Token` header.
+
+**Environment variable:** `ADMIN_TOKEN`
+
+**Example:**
+```bash
+curl -H "X-Admin-Token: your_secret_token" http://localhost:8000/dashboard/exec
+```
+
+### Protected Endpoints
+
+| Endpoint | Method |
+|----------|--------|
+| `/dashboard/exec` | GET |
+| `/export/decisions` | GET |
+| `/export/actions` | GET |
+| `/export/metrics` | GET |
+| `/export/plans` | GET |
+| `/session/architect/save` | POST |
+| `/module/summary` | POST |
+| `/actions/from-plan` | POST |
+| `/actions/{id}/start` | POST |
+| `/actions/{id}/complete` | POST |
+| `/actions/{id}/block` | POST |
+| `/actions/{id}/link-metric` | POST |
+| `/metrics/create` | POST |
+| `/metrics/{id}/update` | POST |
+
+### Open Endpoints
+
+| Endpoint | Method |
+|----------|--------|
+| `/health` | GET |
+| `/study/*` | ALL |
+| `/decisions/*` | ALL |
+| `/course/*` | GET |
+| `/module/review` | POST |
+| `/module/status/{module}` | GET |
+| `/session/architect` | POST |
+| `/actions` | GET |
+| `/actions/status` | GET |
+| `/actions/{id}` | GET |
+| `/actions/{id}/metric` | GET |
+| `/metrics` | GET |
+| `/metrics/impact` | GET |
+| `/metrics/{id}` | GET |
+| `/ritual/*` | GET |
+| `/ui/exec` | GET |
+
+### Error Responses
+
+**401 Unauthorized:**
+```json
+{"detail": "Missing X-Admin-Token header"}
+{"detail": "Invalid admin token"}
+{"detail": "ADMIN_TOKEN not configured on server"}
+```
 
 ---
 
@@ -61,7 +125,7 @@ process     # Single process
 {
   "status": "ok",
   "timestamp": "ISO8601",
-  "version": "1.6.0",
+  "version": "1.8.0",
   "schema_version": "0006"
 }
 ```
@@ -267,6 +331,7 @@ process     # Single process
 | Code | Meaning |
 |------|---------|
 | 400 | Bad Request - validation failed |
+| 401 | Unauthorized - missing or invalid token |
 | 404 | Not Found - resource doesn't exist |
 | 409 | Conflict - operation violates constraints |
 | 500 | Internal Error |
@@ -294,3 +359,5 @@ process     # Single process
 | 1.4.0 | 0006 | Metrics |
 | 1.5.0 | 0006 | Dashboard, exports |
 | 1.6.0 | 0006 | Guardrails, contracts |
+| 1.7.1 | 0006 | Bootstrap UI |
+| 1.8.0 | 0006 | Admin token auth |

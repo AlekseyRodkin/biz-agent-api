@@ -16,6 +16,8 @@
         .refresh-spinner { display: none; }
         .refresh-spinner.active { display: inline-block; }
         .last-update { font-size: 0.8rem; color: #6c757d; }
+        #authSection { display: none; }
+        #mainContent { display: none; }
     </style>
 </head>
 <body>
@@ -27,159 +29,189 @@
             <span class="text-light">
                 <span class="refresh-spinner spinner-border spinner-border-sm" role="status"></span>
                 <span class="last-update" id="lastUpdate"></span>
+                <button class="btn btn-outline-light btn-sm ms-2" id="logoutBtn" style="display: none;" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
             </span>
         </div>
     </nav>
 
     <div class="container">
-        <!-- Error Alert -->
-        <div class="alert alert-danger d-none" id="errorAlert" role="alert">
-            <i class="bi bi-exclamation-triangle"></i>
-            <span id="errorMessage"></span>
-        </div>
-
-        <!-- Version Info -->
-        <div class="row mb-3">
-            <div class="col">
-                <small class="text-muted">
-                    API: <span id="apiVersion">-</span> | Schema: <span id="schemaVersion">-</span> | User: <span id="userId">-</span>
-                </small>
-            </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="row mb-4">
-            <div class="col">
-                <div class="btn-group me-2" role="group">
-                    <a href="/ritual/daily" target="_blank" class="btn btn-outline-primary">
-                        <i class="bi bi-sun"></i> Daily Focus
-                    </a>
-                    <a href="/ritual/weekly" target="_blank" class="btn btn-outline-primary">
-                        <i class="bi bi-calendar-week"></i> Weekly Review
-                    </a>
-                </div>
-                <div class="btn-group" role="group">
-                    <a href="/export/actions?format=csv" class="btn btn-outline-secondary" download>
-                        <i class="bi bi-filetype-csv"></i> Actions CSV
-                    </a>
-                    <a href="/export/metrics?format=md" class="btn btn-outline-secondary" download>
-                        <i class="bi bi-filetype-md"></i> Metrics MD
-                    </a>
-                    <a href="/export/plans?format=json" class="btn btn-outline-secondary" download>
-                        <i class="bi bi-filetype-json"></i> Plans JSON
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <div class="row">
-            <!-- Course Progress -->
-            <div class="col-md-6 col-lg-4">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <i class="bi bi-book"></i> Course Progress
-                    </div>
-                    <div class="card-body">
-                        <h2 class="card-title" id="coursePercent">--%</h2>
-                        <div class="progress mb-2" style="height: 20px;">
-                            <div class="progress-bar" id="courseProgressBar" role="progressbar" style="width: 0%"></div>
+        <!-- Auth Section -->
+        <div id="authSection">
+            <div class="row justify-content-center">
+                <div class="col-md-6 col-lg-4">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-shield-lock"></i> Authentication Required
                         </div>
-                        <p class="card-text text-muted">
-                            <span id="courseCompleted">-</span> / <span id="courseTotal">-</span> lectures
-                        </p>
-                        <small class="text-muted">Current: <span id="currentLecture">-</span></small>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Actions Summary -->
-            <div class="col-md-6 col-lg-4">
-                <div class="card">
-                    <div class="card-header bg-success text-white">
-                        <i class="bi bi-check2-square"></i> Actions
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-3">
-                            <span class="badge bg-secondary fs-6" id="actionsTotal">0 total</span>
-                            <span class="badge bg-success fs-6" id="actionsDone">0 done</span>
-                        </div>
-                        <div class="d-flex justify-content-between mb-3">
-                            <span class="badge bg-primary fs-6" id="actionsInProgress">0 in progress</span>
-                            <span class="badge bg-warning text-dark fs-6" id="actionsBlocked">0 blocked</span>
-                        </div>
-                        <p class="card-text text-muted">
-                            Done this week: <strong id="actionsDoneThisWeek">0</strong>
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Metrics Summary -->
-            <div class="col-md-6 col-lg-4">
-                <div class="card">
-                    <div class="card-header bg-info text-white">
-                        <i class="bi bi-graph-up"></i> Metrics
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-3">
-                            <span class="badge bg-secondary fs-6" id="metricsTotal">0 total</span>
-                            <span class="badge bg-success fs-6" id="metricsOnTrack">0 on track</span>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span class="badge bg-warning text-dark fs-6" id="metricsOffTrack">0 off track</span>
-                            <span class="badge bg-primary fs-6" id="metricsExceeded">0 exceeded</span>
+                        <div class="card-body">
+                            <p class="text-muted">Enter admin token to access the dashboard.</p>
+                            <div class="mb-3">
+                                <label for="tokenInput" class="form-label">Admin Token</label>
+                                <input type="password" class="form-control" id="tokenInput" placeholder="Enter token...">
+                            </div>
+                            <div class="alert alert-danger d-none" id="authError"></div>
+                            <button class="btn btn-primary w-100" onclick="authenticate()">
+                                <i class="bi bi-unlock"></i> Login
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="row">
-            <!-- Active Plans -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">
-                        <i class="bi bi-diagram-3"></i> Active Plans
-                    </div>
-                    <ul class="list-group list-group-flush" id="plansList">
-                        <li class="list-group-item text-muted">Loading...</li>
-                    </ul>
+        <!-- Main Content -->
+        <div id="mainContent">
+            <!-- Error Alert -->
+            <div class="alert alert-danger d-none" id="errorAlert" role="alert">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span id="errorMessage"></span>
+            </div>
+
+            <!-- Version Info -->
+            <div class="row mb-3">
+                <div class="col">
+                    <small class="text-muted">
+                        API: <span id="apiVersion">-</span> | Schema: <span id="schemaVersion">-</span> | User: <span id="userId">-</span>
+                    </small>
                 </div>
             </div>
 
-            <!-- Key Risks -->
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-danger text-white">
-                        <i class="bi bi-exclamation-diamond"></i> Key Risks
+            <!-- Quick Actions -->
+            <div class="row mb-4">
+                <div class="col">
+                    <div class="btn-group me-2" role="group">
+                        <a href="/ritual/daily" target="_blank" class="btn btn-outline-primary">
+                            <i class="bi bi-sun"></i> Daily Focus
+                        </a>
+                        <a href="/ritual/weekly" target="_blank" class="btn btn-outline-primary">
+                            <i class="bi bi-calendar-week"></i> Weekly Review
+                        </a>
                     </div>
-                    <div class="card-body" id="risksList">
-                        <p class="text-muted">Loading...</p>
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-secondary" onclick="downloadExport('actions', 'csv')">
+                            <i class="bi bi-filetype-csv"></i> Actions CSV
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="downloadExport('metrics', 'md')">
+                            <i class="bi bi-filetype-md"></i> Metrics MD
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="downloadExport('plans', 'json')">
+                            <i class="bi bi-filetype-json"></i> Plans JSON
+                        </button>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Blocked Actions Details -->
-        <div class="row mt-3" id="blockedSection" style="display: none;">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-warning text-dark">
-                        <i class="bi bi-slash-circle"></i> Blocked Actions
+            <div class="row">
+                <!-- Course Progress -->
+                <div class="col-md-6 col-lg-4">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-book"></i> Course Progress
+                        </div>
+                        <div class="card-body">
+                            <h2 class="card-title" id="coursePercent">--%</h2>
+                            <div class="progress mb-2" style="height: 20px;">
+                                <div class="progress-bar" id="courseProgressBar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                            <p class="card-text text-muted">
+                                <span id="courseCompleted">-</span> / <span id="courseTotal">-</span> lectures
+                            </p>
+                            <small class="text-muted">Current: <span id="currentLecture">-</span></small>
+                        </div>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table table-striped mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Action</th>
-                                    <th>Reason</th>
-                                    <th>Days</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="blockedTable">
-                            </tbody>
-                        </table>
+                </div>
+
+                <!-- Actions Summary -->
+                <div class="col-md-6 col-lg-4">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <i class="bi bi-check2-square"></i> Actions
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-3">
+                                <span class="badge bg-secondary fs-6" id="actionsTotal">0 total</span>
+                                <span class="badge bg-success fs-6" id="actionsDone">0 done</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-3">
+                                <span class="badge bg-primary fs-6" id="actionsInProgress">0 in progress</span>
+                                <span class="badge bg-warning text-dark fs-6" id="actionsBlocked">0 blocked</span>
+                            </div>
+                            <p class="card-text text-muted">
+                                Done this week: <strong id="actionsDoneThisWeek">0</strong>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Metrics Summary -->
+                <div class="col-md-6 col-lg-4">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <i class="bi bi-graph-up"></i> Metrics
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between mb-3">
+                                <span class="badge bg-secondary fs-6" id="metricsTotal">0 total</span>
+                                <span class="badge bg-success fs-6" id="metricsOnTrack">0 on track</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="badge bg-warning text-dark fs-6" id="metricsOffTrack">0 off track</span>
+                                <span class="badge bg-primary fs-6" id="metricsExceeded">0 exceeded</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Active Plans -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-diagram-3"></i> Active Plans
+                        </div>
+                        <ul class="list-group list-group-flush" id="plansList">
+                            <li class="list-group-item text-muted">Loading...</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Key Risks -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-danger text-white">
+                            <i class="bi bi-exclamation-diamond"></i> Key Risks
+                        </div>
+                        <div class="card-body" id="risksList">
+                            <p class="text-muted">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Blocked Actions Details -->
+            <div class="row mt-3" id="blockedSection" style="display: none;">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-warning text-dark">
+                            <i class="bi bi-slash-circle"></i> Blocked Actions
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Action</th>
+                                        <th>Reason</th>
+                                        <th>Days</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="blockedTable">
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -187,20 +219,99 @@
     </div>
 
     <footer class="text-center text-muted py-4">
-        <small>Biz Agent API v<span id="footerVersion">1.7.1</span> | Auto-refresh: 60s</small>
+        <small>Biz Agent API v<span id="footerVersion">1.8.0</span> | Auto-refresh: 60s</small>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const API_BASE = '';
+        const TOKEN_KEY = 'biz_agent_admin_token';
         let refreshInterval;
+
+        function getToken() {
+            return localStorage.getItem(TOKEN_KEY);
+        }
+
+        function setToken(token) {
+            localStorage.setItem(TOKEN_KEY, token);
+        }
+
+        function clearToken() {
+            localStorage.removeItem(TOKEN_KEY);
+        }
+
+        function showAuth() {
+            document.getElementById('authSection').style.display = 'block';
+            document.getElementById('mainContent').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'none';
+        }
+
+        function showMain() {
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+        }
+
+        async function authenticate() {
+            const token = document.getElementById('tokenInput').value.trim();
+            if (!token) {
+                document.getElementById('authError').textContent = 'Please enter a token';
+                document.getElementById('authError').classList.remove('d-none');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/dashboard/exec`, {
+                    headers: { 'X-Admin-Token': token }
+                });
+
+                if (response.status === 401) {
+                    document.getElementById('authError').textContent = 'Invalid token';
+                    document.getElementById('authError').classList.remove('d-none');
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                setToken(token);
+                document.getElementById('authError').classList.add('d-none');
+                showMain();
+                fetchDashboard();
+                refreshInterval = setInterval(fetchDashboard, 60000);
+            } catch (error) {
+                document.getElementById('authError').textContent = 'Connection error: ' + error.message;
+                document.getElementById('authError').classList.remove('d-none');
+            }
+        }
+
+        function logout() {
+            clearToken();
+            if (refreshInterval) clearInterval(refreshInterval);
+            showAuth();
+        }
+
+        async function fetchWithAuth(url) {
+            const token = getToken();
+            const response = await fetch(url, {
+                headers: { 'X-Admin-Token': token }
+            });
+
+            if (response.status === 401) {
+                logout();
+                throw new Error('Session expired');
+            }
+
+            return response;
+        }
 
         async function fetchDashboard() {
             const spinner = document.querySelector('.refresh-spinner');
             spinner.classList.add('active');
 
             try {
-                const response = await fetch(`${API_BASE}/dashboard/exec`);
+                const response = await fetchWithAuth(`${API_BASE}/dashboard/exec`);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -216,12 +327,33 @@
             }
         }
 
+        async function downloadExport(type, format) {
+            try {
+                const response = await fetchWithAuth(`${API_BASE}/export/${type}?format=${format}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${type}.${format}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (error) {
+                showError('Export failed: ' + error.message);
+            }
+        }
+
         function renderDashboard(data) {
             // Version info
             document.getElementById('apiVersion').textContent = data.api_version || '-';
             document.getElementById('schemaVersion').textContent = data.schema_version || '-';
             document.getElementById('userId').textContent = data.user_id || '-';
-            document.getElementById('footerVersion').textContent = data.api_version || '1.7.1';
+            document.getElementById('footerVersion').textContent = data.api_version || '1.8.0';
 
             // Course progress
             const course = data.course_progress || {};
@@ -319,11 +451,22 @@
             return date.toLocaleDateString('ru-RU');
         }
 
-        // Initial load
-        fetchDashboard();
+        // Check for existing token on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = getToken();
+            if (token) {
+                showMain();
+                fetchDashboard();
+                refreshInterval = setInterval(fetchDashboard, 60000);
+            } else {
+                showAuth();
+            }
 
-        // Auto-refresh every 60 seconds
-        refreshInterval = setInterval(fetchDashboard, 60000);
+            // Enter key in token input
+            document.getElementById('tokenInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') authenticate();
+            });
+        });
     </script>
 </body>
 </html>
