@@ -3,7 +3,7 @@ from typing import Optional
 from app.db.supabase_client import get_client
 
 # Current schema version (last migration number)
-SCHEMA_VERSION = "0007"
+SCHEMA_VERSION = "0009"
 
 
 class GuardrailError(Exception):
