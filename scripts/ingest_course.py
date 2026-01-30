@@ -269,7 +269,9 @@ def process_lecture_dry_run(lecture: dict, show_stats: bool = False) -> dict:
                 "error": stats.get("error")
             }
         else:
-            chunks = list(chunk_text(text, validate=False))
+            # Pass speaker_type for content_type detection
+            speaker_type = lecture.get("speaker_type", "methodology")
+            chunks = list(chunk_text(text, validate=False, speaker_type=speaker_type))
             content_types = {}
             for c in chunks:
                 ct = c["content_type"]
@@ -300,7 +302,9 @@ def ingest_lecture(client, lecture: dict, embed_fn, chunk_fn) -> int:
     print(f"  Processing: {lecture['lecture_id']} - {lecture['lecture_title']}")
 
     text = read_lecture_file(lecture["source_file"])
-    chunks = list(chunk_fn(text))
+    # Pass speaker_type for content_type detection (student_comment only for methodology)
+    speaker_type = lecture.get("speaker_type", "methodology")
+    chunks = list(chunk_fn(text, speaker_type=speaker_type))
 
     upsert_lecture(client, lecture)
     delete_old_chunks(client, lecture["lecture_id"])

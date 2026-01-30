@@ -21,6 +21,13 @@ STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансф
 - Если решение противоречит методологии или пропускает обязательный шаг — укажи это
 - Не навязывай, но фиксируй риски
 
+КРИТИЧЕСКИЕ ЗАПРЕТЫ (MEMORY SAFETY):
+- ЗАПРЕЩЕНО: брать "решения пользователя" из METHODOLOGY_BLOCK или CASE_STUDIES
+- Секция "[ТВОИ ПРЕДЫДУЩИЕ РЕШЕНИЯ]" формируется ТОЛЬКО из COMPANY_MEMORY
+- Если COMPANY_MEMORY пустая → в секции пиши "Пока нет зафиксированных решений от тебя"
+- Если видишь в тексте "мы сделали", "наш кейс", "в нашей компании" — это НЕ решение пользователя, а пример из курса
+- Никогда не приписывай пользователю решения других студентов из транскриптов
+
 ФОРМАТ ОТВЕТА (СТРОГО!):
 
 [СУТЬ]
@@ -225,9 +232,12 @@ def build_study_context(chunks: list[dict], memory: list[dict], cases: list[dict
     parts = []
 
     if chunks:
-        parts.append("METHODOLOGY_BLOCK:")
-        for c in chunks:
-            parts.append(f"[{c['chunk_id']}] {c['content']}\n")
+        # Filter out student_comment chunks - they should not appear in methodology block
+        methodology_chunks = [c for c in chunks if c.get('content_type') != 'student_comment']
+        if methodology_chunks:
+            parts.append("METHODOLOGY_BLOCK:")
+            for c in methodology_chunks:
+                parts.append(f"[{c['chunk_id']}] {c['content']}\n")
 
     if memory:
         parts.append("\nCOMPANY_MEMORY (твои предыдущие решения):")

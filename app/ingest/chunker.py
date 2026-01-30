@@ -26,13 +26,31 @@ EXAMPLE_MARKERS = re.compile(
     r'\b(пример|кейс|в компании|мы делали)\b',
     re.IGNORECASE
 )
+# Markers for student/participant comments in transcripts
+STUDENT_MARKERS = re.compile(
+    r'\b(вопрос из зала|студент[ыа]?|участник[иа]?|у нас проект|мы сделали|наш кейс|'
+    r'у меня вопрос|в нашей компании|мы внедрили|наша команда|наш опыт)\b',
+    re.IGNORECASE
+)
 
 # Sentence boundaries (period, exclamation, question followed by space/newline)
 SENTENCE_BOUNDARY = re.compile(r'(?<=[.!?])\s+')
 
 
-def detect_content_type(text: str) -> str:
-    """Detect content type based on markers in text."""
+def detect_content_type(text: str, speaker_type: str = "methodology") -> str:
+    """Detect content type based on markers in text.
+
+    Args:
+        text: Chunk text content
+        speaker_type: Source speaker type (methodology, case_study)
+
+    Returns:
+        Content type: theory, assignment, example, student_comment
+    """
+    # Student comments only detected in methodology transcripts
+    # (case_study speakers are expected to share their experience)
+    if speaker_type == "methodology" and STUDENT_MARKERS.search(text):
+        return "student_comment"
     if ASSIGNMENT_MARKERS.search(text):
         return "assignment"
     if EXAMPLE_MARKERS.search(text):
@@ -79,17 +97,18 @@ def split_long_paragraph(paragraph: str, max_size: int) -> list[str]:
     return pieces
 
 
-def chunk_text(text: str, validate: bool = True) -> Generator[dict, None, None]:
+def chunk_text(text: str, validate: bool = True, speaker_type: str = "methodology") -> Generator[dict, None, None]:
     """
     Split text into chunks with overlap.
 
     Args:
         text: Input text to chunk
         validate: If True, raise error if text > 5000 chars produces <=1 chunk
+        speaker_type: Source speaker type for content_type detection
 
     Yields dicts with:
       - content: chunk text
-      - content_type: theory/assignment/example
+      - content_type: theory/assignment/example/student_comment
       - sequence_order: 1-based index
       - char_count: length of content
 
@@ -118,7 +137,7 @@ def chunk_text(text: str, validate: bool = True) -> Generator[dict, None, None]:
         if len(test_chunk) > MAX_CHUNK_SIZE and current_chunk:
             sequence_order += 1
             chunks_yielded += 1
-            content_type = detect_content_type(current_chunk)
+            content_type = detect_content_type(current_chunk, speaker_type)
 
             yield {
                 "content": current_chunk,
@@ -137,7 +156,7 @@ def chunk_text(text: str, validate: bool = True) -> Generator[dict, None, None]:
     if current_chunk.strip():
         sequence_order += 1
         chunks_yielded += 1
-        content_type = detect_content_type(current_chunk)
+        content_type = detect_content_type(current_chunk, speaker_type)
 
         yield {
             "content": current_chunk,
