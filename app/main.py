@@ -24,7 +24,7 @@ from app.rag.metrics import (
 )
 from app.rag.dashboard import executive_dashboard
 from app.rag.exports import export_decisions, export_actions, export_metrics, export_plans
-from app.rag.chat import get_history, process_chat_message, get_chat_status
+from app.rag.chat import get_history, process_chat_message, get_chat_status, ensure_study_welcome
 from app.rag.guardrails import (
     GuardrailError, SCHEMA_VERSION,
     validate_architect_save, validate_metric_create,
@@ -790,7 +790,13 @@ async def chat_history_endpoint(
     try:
         if mode and mode not in ["ask", "study", "architect"]:
             raise HTTPException(status_code=400, detail="Invalid mode. Use: ask, study, architect")
-        messages = get_history(USER_ID, mode, limit)
+
+        # For Study mode: ensure welcome message exists (auto-start)
+        if mode == "study":
+            messages = ensure_study_welcome(USER_ID)
+        else:
+            messages = get_history(USER_ID, mode, limit)
+
         return {"messages": messages, "total": len(messages)}
     except HTTPException:
         raise

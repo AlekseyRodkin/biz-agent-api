@@ -268,35 +268,35 @@
         const modeConfig = {
             study: {
                 title: 'Study Mode',
-                badge: 'Learning',
+                badge: 'Обучение',
                 badgeClass: 'bg-primary',
                 quickActions: [
-                    { label: 'Start', icon: 'bi-play-fill', message: '/start' },
-                    { label: 'Next', icon: 'bi-skip-forward-fill', message: '/next' },
-                    { label: 'Help', icon: 'bi-question-circle', message: '/help' }
+                    { label: 'Поехали', icon: 'bi-play-fill', message: 'Поехали!' },
+                    { label: 'Дальше', icon: 'bi-skip-forward-fill', message: 'Давай дальше' },
+                    { label: 'Сброс', icon: 'bi-arrow-counterclockwise', message: '/start' }
                 ],
-                placeholder: 'Ответьте на вопрос или /next...'
+                placeholder: 'Напишите ответ или «Дальше»...'
             },
             ask: {
                 title: 'Ask Mode',
-                badge: 'Q&A',
+                badge: 'Вопросы',
                 badgeClass: 'bg-success',
                 quickActions: [
-                    { label: 'Daily', icon: 'bi-calendar-day', message: '/daily' },
-                    { label: 'Weekly', icon: 'bi-calendar-week', message: '/weekly' },
-                    { label: 'Help', icon: 'bi-question-circle', message: '/help' }
+                    { label: 'Сегодня', icon: 'bi-calendar-day', message: '/daily' },
+                    { label: 'Неделя', icon: 'bi-calendar-week', message: '/weekly' },
+                    { label: 'Помощь', icon: 'bi-question-circle', message: '/help' }
                 ],
-                placeholder: 'Спросите про AI или используйте /команды...'
+                placeholder: 'Задайте вопрос про AI...'
             },
             architect: {
                 title: 'Architect Mode',
-                badge: 'Planning',
+                badge: 'Планирование',
                 badgeClass: 'bg-warning text-dark',
                 quickActions: [
-                    { label: 'Exec', icon: 'bi-speedometer2', message: '/exec' },
-                    { label: 'Help', icon: 'bi-question-circle', message: '/help' }
+                    { label: 'Dashboard', icon: 'bi-speedometer2', message: '/exec' },
+                    { label: 'Помощь', icon: 'bi-question-circle', message: '/help' }
                 ],
-                placeholder: '/plan <цель> или опишите задачу...'
+                placeholder: 'Опишите цель внедрения AI...'
             }
         };
 
@@ -393,7 +393,11 @@
 
             empty.style.display = 'none';
             container.innerHTML = messages.map(m => renderMessage(m)).join('');
-            container.scrollTop = container.scrollHeight;
+            // Smooth autoscroll to last message
+            const lastMessage = container.querySelector('.message:last-child');
+            if (lastMessage) {
+                lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
         }
 
         function renderMessage(msg) {
@@ -495,7 +499,11 @@
             const container = document.getElementById('chatContainer');
             document.getElementById('emptyState').style.display = 'none';
             container.innerHTML += renderMessage(msg);
-            container.scrollTop = container.scrollHeight;
+            // Smooth autoscroll to last message
+            const lastMessage = container.querySelector('.message:last-child');
+            if (lastMessage) {
+                lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
         }
 
         function escapeHtml(text) {

@@ -11,6 +11,21 @@ from app.rag.actions import create_actions_from_plan, get_actions_status
 from app.rag.course_map import get_course_progress
 
 
+# Welcome message for Study mode (auto-start)
+STUDY_WELCOME_MESSAGE = """**Привет!** 👋
+
+Мы начинаем обучение по методологии Николая Верховского — «Трансформация бизнеса с ИИ».
+
+Я буду шаг за шагом объяснять подход и помогать тебе адаптировать его под твою компанию. По ходу обучения ты будешь принимать решения, которые я сохраню — они станут основой твоего плана внедрения.
+
+**Как это работает:**
+- Я даю блок методологии + вопрос
+- Ты отвечаешь своими словами
+- Я сохраняю твоё решение и идём дальше
+
+Готов начать? Просто напиши **«Поехали»** или **«Да»**."""
+
+
 # Command definitions for /help
 COMMANDS_HELP = """**Доступные команды:**
 
@@ -59,6 +74,23 @@ def get_history(user_id: str, mode: str = None, limit: int = 50) -> list:
     messages = result.data if result.data else []
     messages.reverse()
     return messages
+
+
+def ensure_study_welcome(user_id: str) -> list:
+    """
+    Ensure Study mode has a welcome message.
+    If history is empty, create and save the welcome message.
+    Returns the history (with welcome message if created).
+    """
+    messages = get_history(user_id, mode="study", limit=1)
+
+    if not messages:
+        # No messages yet - create welcome message
+        save_message(user_id, "study", "assistant", STUDY_WELCOME_MESSAGE, {"type": "welcome"})
+        # Return the newly created message
+        return get_history(user_id, mode="study", limit=50)
+
+    return get_history(user_id, mode="study", limit=50)
 
 
 def process_command(user_id: str, command: str, args: str) -> tuple[str, dict]:
@@ -191,38 +223,55 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
         metadata = {"sources": result["sources"]}
 
     elif mode == "study":
-        # Study mode - handle commands and answers
+        # Study mode - human-friendly chat
+        # Regular text = continue learning (no /next required)
         msg_lower = message.lower().strip()
 
-        if msg_lower in ["next", "далее", "дальше", "следующий"]:
-            # Get next study block
+        # Patterns that mean "continue" / "yes, let's go"
+        continue_patterns = [
+            "next", "далее", "дальше", "следующий",
+            "да", "yes", "поехали", "давай", "го", "go",
+            "ок", "ok", "окей", "okay", "хорошо", "ладно",
+            "понял", "понятно", "ясно", "продолжай", "продолжим",
+            "готов", "готова", "начнём", "начнем", "вперёд", "вперед"
+        ]
+
+        # Check if message is a "continue" signal
+        is_continue = any(pattern in msg_lower for pattern in continue_patterns) and len(msg_lower) < 50
+
+        if msg_lower in ["start", "начать", "сброс", "reset"]:
+            # Reset progress
+            progress = reset_progress(user_id)
+            response_content = "✅ Прогресс сброшен. Готов к обучению!\n\nНапиши «Поехали» чтобы начать."
+            metadata = {"progress": progress}
+        elif is_continue:
+            # User wants to continue - get next study block
             result = study_next(user_id)
             if result.get("completed"):
                 response_content = "🎉 Поздравляю! Ты прошёл весь курс!"
             else:
-                response_content = result.get("content", "")
+                response_content = result.get("answer", "") or result.get("content", "")
                 metadata = {
                     "block": result.get("block"),
-                    "progress": result.get("progress")
+                    "progress": result.get("progress"),
+                    "sources": result.get("sources", {})
                 }
-        elif msg_lower in ["start", "начать", "сброс", "reset"]:
-            # Reset progress
-            progress = reset_progress(user_id)
-            response_content = "✅ Прогресс сброшен. Готов к обучению!\n\nНапиши 'next' чтобы начать."
-            metadata = {"progress": progress}
         else:
-            # Process as answer
+            # Process as answer to the question
             progress = get_user_progress(user_id)
             context = {
                 "topic": progress.get("current_lecture_id", "") if progress else "",
                 "question": "Как ты решил реализовать это в своей компании?"
             }
             result = process_user_answer(user_id, message, context)
-            response_content = result.get("response", "")
+            response_content = result.get("answer", "") or result.get("response", "")
             metadata = {
-                "decision_saved": result.get("decision_saved", False),
-                "decision_id": result.get("decision_id")
+                "decision_saved": result.get("memory_saved", False),
+                "decision_id": result.get("memory_id")
             }
+            # After processing answer, auto-continue to next block
+            if response_content:
+                response_content += "\n\n---\n\n**Отлично!** Напиши «Дальше» когда будешь готов к следующему блоку."
 
     elif mode == "architect":
         # Architect mode - generate implementation plan
