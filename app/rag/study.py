@@ -4,7 +4,7 @@ import re
 from app.db.supabase_client import get_client
 from app.embeddings.embedder import embed_query
 from app.llm.deepseek_client import chat_completion
-from app.config import USER_ID
+from app.config import USER_ID, USE_CLEAN_CONTENT
 from app.rag.decisions import detect_conflicts, build_conflict_context
 from app.rag.course_map import build_navigation_block
 
@@ -227,6 +227,13 @@ def update_progress(user_id: str, lecture_id: str, sequence_order: int) -> None:
         }).eq("user_id", user_id).execute()
 
 
+def get_chunk_content(chunk: dict) -> str:
+    """Get content from chunk, preferring clean_content if USE_CLEAN_CONTENT is enabled."""
+    if USE_CLEAN_CONTENT and chunk.get('clean_content'):
+        return chunk['clean_content']
+    return chunk['content']
+
+
 def build_study_context(chunks: list[dict], memory: list[dict], cases: list[dict], conflicts: list[dict] = None) -> str:
     """Build context string for study prompt."""
     parts = []
@@ -237,7 +244,8 @@ def build_study_context(chunks: list[dict], memory: list[dict], cases: list[dict
         if methodology_chunks:
             parts.append("METHODOLOGY_BLOCK:")
             for c in methodology_chunks:
-                parts.append(f"[{c['chunk_id']}] {c['content']}\n")
+                content = get_chunk_content(c)
+                parts.append(f"[{c['chunk_id']}] {content}\n")
 
     if memory:
         parts.append("\nCOMPANY_MEMORY (твои предыдущие решения):")
@@ -249,7 +257,8 @@ def build_study_context(chunks: list[dict], memory: list[dict], cases: list[dict
     if cases:
         parts.append("\nCASE_STUDIES (примеры):")
         for c in cases:
-            parts.append(f"[{c['chunk_id']}] {c['content'][:500]}...\n")
+            content = get_chunk_content(c)
+            parts.append(f"[{c['chunk_id']}] {content[:500]}...\n")
 
     # Add conflict context for LLM to analyze
     if conflicts:

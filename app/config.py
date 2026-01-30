@@ -19,3 +19,6 @@ APP_USERNAME = os.getenv("APP_USERNAME", "")
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")
 SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
+
+# Content cleaning
+USE_CLEAN_CONTENT = os.getenv("USE_CLEAN_CONTENT", "false").lower() == "true"
