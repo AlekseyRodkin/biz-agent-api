@@ -162,16 +162,16 @@ def get_course_progress(user_id: str) -> dict:
     next_lectures = methodology_lectures[next_start:next_start + 3]
 
     # Calculate percentages
-    # completed_count = fully completed lectures
-    # partial progress in current lecture
+    # RULE: completed = lectures strictly BEFORE current_lecture_id
+    # percent = completed / total * 100 (NO partial progress)
+    # This ensures consistency: completed=0 → percent=0, completed=1 → percent≈5.3%
     completed_count = len(completed)
-    partial = (current_seq / current_lecture_chunks) if current_lecture_chunks > 0 else 0
 
-    # Methodology percent: (completed + partial) / total
-    methodology_percent = ((completed_count + partial) / total_methodology * 100) if total_methodology > 0 else 0
+    # Methodology percent: strictly completed / total (no partial)
+    methodology_percent = (completed_count / total_methodology * 100) if total_methodology > 0 else 0
 
-    # Total course percent (same as methodology for now, since we track only methodology)
-    total_percent = methodology_percent
+    # Partial progress within current lecture (for display only, not counted in percent)
+    partial_in_current = (current_seq / current_lecture_chunks * 100) if current_lecture_chunks > 0 else 0
 
     return {
         "started": True,
@@ -183,7 +183,8 @@ def get_course_progress(user_id: str) -> dict:
             "current_chunk": current_seq,
             "total_chunks": current_lecture_chunks,
             "lecture_index": current_index + 1,  # 1-based for display
-            "total_lectures": total_methodology
+            "total_lectures": total_methodology,
+            "partial_percent": round(partial_in_current, 1)  # Progress within current lecture
         },
         "completed_lectures": [
             {"lecture_id": l["lecture_id"], "lecture_title": l["lecture_title"]}
@@ -194,7 +195,6 @@ def get_course_progress(user_id: str) -> dict:
             for l in next_lectures
         ],
         "percent_methodology": round(methodology_percent, 1),
-        "percent_total": round(total_percent, 1),
         "total_methodology_lectures": total_methodology
     }
 
