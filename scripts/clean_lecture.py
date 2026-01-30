@@ -30,17 +30,23 @@ TECH_NOISE_PHRASES = [
     r'вы меня слышите\??',
     r'включите микрофон',
     r'выключите микрофон',
-    # Zoom/online specific
+    # Zoom/online attendance instructions
     r'подключитесь.*zoom',
     r'в zoom.*подключ',
     r'через zoom',
-    # Chat instructions
-    r'напишите в чат',
+    r'выключиться в zoom',
+    r'послушать удаленно',
+    r'если вы не можете.*zoom',
+    # Chat instructions (not ChatGPT!)
+    r'напишите в чат(?!gpt)',
     r'пишите в чатик',
     r'в чатик напишите',
     # Session start phrases
     r'^раз,?\s*два,?\s*три',
     r'проверка связи',
+    # Housekeeping
+    r'академические правила',
+    r'присутствие на модулях',
 ]
 
 TECH_NOISE_COMPILED = [re.compile(p, re.IGNORECASE) for p in TECH_NOISE_PHRASES]
