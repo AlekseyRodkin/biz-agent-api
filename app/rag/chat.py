@@ -1,7 +1,11 @@
 """Chat module: conversation history and message routing."""
 import json
+import logging
+import uuid
 from datetime import datetime
 from app.db.supabase_client import get_client
+
+logger = logging.getLogger(__name__)
 from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, process_user_answer, reset_progress, get_user_progress
 from app.rag.architect_session import architect_session
@@ -194,9 +198,12 @@ def process_command(user_id: str, command: str, args: str) -> tuple[str, dict]:
 
 def process_chat_message(user_id: str, mode: str, message: str) -> dict:
     """Process a chat message based on mode and return response."""
+    request_id = str(uuid.uuid4())[:8]
+    logger.info(f"[{request_id}] CHAT_SEND_START mode={mode} user={user_id}")
 
     # Save user message
     save_message(user_id, mode, "user", message)
+    logger.info(f"[{request_id}] CHAT_SEND_DB_USER_SAVED")
 
     response_content = ""
     metadata = {}
@@ -218,7 +225,9 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
 
     if mode == "ask":
         # QA mode - use existing ask pipeline
+        logger.info(f"[{request_id}] CHAT_PIPELINE_START type=rag_ask")
         result = rag_ask(message)
+        logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=rag_ask")
         response_content = result["answer"]
         metadata = {"sources": result["sources"]}
 
@@ -241,12 +250,16 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
 
         if msg_lower in ["start", "начать", "сброс", "reset"]:
             # Reset progress
+            logger.info(f"[{request_id}] CHAT_PIPELINE_START type=reset_progress")
             progress = reset_progress(user_id)
+            logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=reset_progress")
             response_content = "✅ Прогресс сброшен. Готов к обучению!\n\nНапиши «Поехали» чтобы начать."
             metadata = {"progress": progress}
         elif is_continue:
             # User wants to continue - get next study block
+            logger.info(f"[{request_id}] CHAT_PIPELINE_START type=study_next")
             result = study_next(user_id)
+            logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=study_next")
             if result.get("completed"):
                 response_content = "🎉 Поздравляю! Ты прошёл весь курс!"
             else:
@@ -258,12 +271,14 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
                 }
         else:
             # Process as answer to the question
+            logger.info(f"[{request_id}] CHAT_PIPELINE_START type=process_user_answer")
             progress = get_user_progress(user_id)
             context = {
                 "topic": progress.get("current_lecture_id", "") if progress else "",
                 "question": "Как ты решил реализовать это в своей компании?"
             }
             result = process_user_answer(user_id, message, context)
+            logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=process_user_answer")
             response_content = result.get("answer", "") or result.get("response", "")
             metadata = {
                 "decision_saved": result.get("memory_saved", False),
@@ -275,7 +290,9 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
 
     elif mode == "architect":
         # Architect mode - generate implementation plan
+        logger.info(f"[{request_id}] CHAT_PIPELINE_START type=architect_session")
         result = architect_session(user_id, message)
+        logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=architect_session")
         response_content = result.get("plan", "")
         metadata = {
             "goal": result.get("goal"),
@@ -285,7 +302,9 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
 
     # Save assistant response
     save_message(user_id, mode, "assistant", response_content, metadata)
+    logger.info(f"[{request_id}] CHAT_SEND_DB_ASSISTANT_SAVED len={len(response_content)}")
 
+    logger.info(f"[{request_id}] CHAT_SEND_RESPONSE_SENT")
     return {
         "role": "assistant",
         "content": response_content,
