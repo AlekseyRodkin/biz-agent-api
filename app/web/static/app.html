@@ -186,13 +186,25 @@
             </a>
         </nav>
 
-        <div class="mt-auto pt-4 border-top border-secondary">
+        <div class="mb-3 mt-4">
+            <small class="text-muted">STATUS</small>
+        </div>
+        <div class="status-block mb-4">
             <div class="progress-info mb-2">
-                <i class="bi bi-mortarboard"></i> Course: <span id="courseProgress">--%</span>
+                <i class="bi bi-mortarboard"></i> Курс: <span id="courseProgress">-</span>
             </div>
-            <div class="progress-info mb-3">
-                <i class="bi bi-geo-alt"></i> <span id="currentLecture">-</span>
+            <div class="progress-info mb-2">
+                <i class="bi bi-play-circle"></i> В работе: <span id="actionsInProgress" class="badge bg-primary">0</span>
             </div>
+            <div class="progress-info mb-2">
+                <i class="bi bi-exclamation-triangle"></i> Блокеры: <span id="blockersCount" class="badge bg-danger">0</span>
+            </div>
+            <div class="progress-info mb-2">
+                <i class="bi bi-graph-down"></i> Off-track: <span id="offTrackCount" class="badge bg-warning text-dark">0</span>
+            </div>
+        </div>
+
+        <div class="mt-auto pt-4 border-top border-secondary">
             <form action="/logout" method="POST">
                 <button type="submit" class="btn btn-outline-secondary btn-sm w-100">
                     <i class="bi bi-box-arrow-right"></i> Logout
@@ -256,24 +268,32 @@
                 badge: 'Learning',
                 badgeClass: 'bg-primary',
                 quickActions: [
-                    { label: 'Start', icon: 'bi-play-fill', message: 'start' },
-                    { label: 'Next', icon: 'bi-skip-forward-fill', message: 'next' }
+                    { label: 'Start', icon: 'bi-play-fill', message: '/start' },
+                    { label: 'Next', icon: 'bi-skip-forward-fill', message: '/next' },
+                    { label: 'Help', icon: 'bi-question-circle', message: '/help' }
                 ],
-                placeholder: 'Answer the question or type "next"...'
+                placeholder: 'Ответьте на вопрос или /next...'
             },
             ask: {
                 title: 'Ask Mode',
                 badge: 'Q&A',
                 badgeClass: 'bg-success',
-                quickActions: [],
-                placeholder: 'Ask about AI implementation...'
+                quickActions: [
+                    { label: 'Daily', icon: 'bi-calendar-day', message: '/daily' },
+                    { label: 'Weekly', icon: 'bi-calendar-week', message: '/weekly' },
+                    { label: 'Help', icon: 'bi-question-circle', message: '/help' }
+                ],
+                placeholder: 'Спросите про AI или используйте /команды...'
             },
             architect: {
                 title: 'Architect Mode',
                 badge: 'Planning',
                 badgeClass: 'bg-warning text-dark',
-                quickActions: [],
-                placeholder: 'Describe your goal for AI implementation...'
+                quickActions: [
+                    { label: 'Exec', icon: 'bi-speedometer2', message: '/exec' },
+                    { label: 'Help', icon: 'bi-question-circle', message: '/help' }
+                ],
+                placeholder: '/plan <цель> или опишите задачу...'
             }
         };
 
@@ -289,6 +309,9 @@
         function switchMode(mode) {
             currentMode = mode;
             const config = modeConfig[mode];
+
+            // Save to localStorage
+            localStorage.setItem('chatMode', mode);
 
             // Update nav
             document.querySelectorAll('.nav-link[data-mode]').forEach(el => {
@@ -314,6 +337,32 @@
 
             // Load history for this mode
             loadHistory();
+        }
+
+        function updateSidebarStatus(sidebar) {
+            if (!sidebar) return;
+
+            // Course progress
+            const cp = sidebar.course_progress || {};
+            const current = cp.current || 0;
+            const total = cp.total || 1;
+            const percent = Math.round((current / total) * 100);
+            document.getElementById('courseProgress').textContent = `${current}/${total} (${percent}%)`;
+
+            // Actions in progress
+            const aip = document.getElementById('actionsInProgress');
+            aip.textContent = sidebar.actions_in_progress || 0;
+            aip.className = sidebar.actions_in_progress > 0 ? 'badge bg-primary' : 'badge bg-secondary';
+
+            // Blockers
+            const bc = document.getElementById('blockersCount');
+            bc.textContent = sidebar.blockers || 0;
+            bc.className = sidebar.blockers > 0 ? 'badge bg-danger' : 'badge bg-secondary';
+
+            // Off-track metrics
+            const otc = document.getElementById('offTrackCount');
+            otc.textContent = sidebar.off_track_metrics || 0;
+            otc.className = sidebar.off_track_metrics > 0 ? 'badge bg-warning text-dark' : 'badge bg-secondary';
         }
 
         async function loadHistory() {
@@ -360,9 +409,12 @@
                 `;
             }
 
+            // Use markdown rendering for assistant messages, plain escape for user
+            const contentHtml = msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content);
+
             return `
                 <div class="message ${msg.role}">
-                    <div class="message-content">${escapeHtml(msg.content)}</div>
+                    <div class="message-content">${contentHtml}</div>
                     <div class="message-meta">${time}${sourcesHtml}</div>
                 </div>
             `;
@@ -449,17 +501,73 @@
             return div.innerHTML;
         }
 
+        function renderMarkdown(text) {
+            if (!text) return '';
+            let html = escapeHtml(text);
+
+            // Bold: **text**
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+            // Code: `text`
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Links: [text](url)
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+            // Simple table rendering (for /help)
+            if (html.includes('|')) {
+                const lines = html.split('\n');
+                let inTable = false;
+                let tableHtml = '';
+                const resultLines = [];
+
+                for (const line of lines) {
+                    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+                        if (!inTable) {
+                            inTable = true;
+                            tableHtml = '<table class="table table-sm table-bordered mt-2 mb-2" style="font-size: 0.85rem;">';
+                        }
+                        // Skip separator line (|---|---|)
+                        if (line.includes('---')) continue;
+
+                        const cells = line.split('|').filter(c => c.trim());
+                        const isHeader = !tableHtml.includes('<tbody>');
+                        if (isHeader) {
+                            tableHtml += '<thead><tr>' + cells.map(c => `<th>${c.trim()}</th>`).join('') + '</tr></thead><tbody>';
+                        } else {
+                            tableHtml += '<tr>' + cells.map(c => `<td>${c.trim()}</td>`).join('') + '</tr>';
+                        }
+                    } else {
+                        if (inTable) {
+                            tableHtml += '</tbody></table>';
+                            resultLines.push(tableHtml);
+                            inTable = false;
+                            tableHtml = '';
+                        }
+                        resultLines.push(line);
+                    }
+                }
+                if (inTable) {
+                    tableHtml += '</tbody></table>';
+                    resultLines.push(tableHtml);
+                }
+                html = resultLines.join('\n');
+            }
+
+            // Line breaks
+            html = html.replace(/\n/g, '<br>');
+
+            return html;
+        }
+
         async function loadStatus() {
             try {
                 const response = await fetchWithAuth('/chat/status');
                 const data = await response.json();
 
-                if (data.progress) {
-                    const p = data.progress;
-                    document.getElementById('courseProgress').textContent =
-                        Math.round((p.current_chunk_index / Math.max(p.total_chunks, 1)) * 100) + '%';
-                    document.getElementById('currentLecture').textContent =
-                        p.current_lecture_id || 'Not started';
+                // Update sidebar status
+                if (data.sidebar) {
+                    updateSidebarStatus(data.sidebar);
                 }
             } catch (error) {
                 console.error('Failed to load status:', error);
@@ -468,7 +576,10 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
-            switchMode('study');
+            // Load saved mode from localStorage or default to 'study'
+            const savedMode = localStorage.getItem('chatMode');
+            const initialMode = savedMode && modeConfig[savedMode] ? savedMode : 'study';
+            switchMode(initialMode);
             loadStatus();
         });
     </script>

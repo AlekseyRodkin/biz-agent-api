@@ -1,4 +1,4 @@
-# API Contract v2.0.0
+# API Contract v2.1.0
 
 ## Overview
 
@@ -200,6 +200,39 @@ process     # Single process
 - `ask` - Q&A about AI implementation
 - `study` - Sequential learning (commands: start, next, or answer)
 - `architect` - Generate implementation plans
+
+### Chat Commands (v2.1.0)
+
+Messages starting with `/` are processed as commands:
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/help` | Show command list | `/help` |
+| `/start` | Reset progress, start learning | `/start` |
+| `/next` | Get next course block | `/next` |
+| `/daily` | Daily focus: today's tasks | `/daily` |
+| `/weekly` | Weekly review: progress & blockers | `/weekly` |
+| `/review <module>` | Module review (1-4) | `/review 1` |
+| `/plan <goal>` | Create implementation plan | `/plan Внедрить AI в продажи` |
+| `/actions <plan_id>` | Generate actions from plan | `/actions <uuid>` |
+| `/exec` | Link to Executive Dashboard | `/exec` |
+
+Commands work in any mode and are saved to chat history.
+
+### GET /chat/status Response (v2.1.0)
+
+```json
+{
+  "progress": {...},
+  "message_counts": {"ask": 5, "study": 10, "architect": 2},
+  "sidebar": {
+    "course_progress": {"current": 15, "total": 100},
+    "blockers": 2,
+    "off_track_metrics": 1,
+    "actions_in_progress": 3
+  }
+}
+```
 
 ---
 
@@ -436,3 +469,4 @@ process     # Single process
 | 1.8.3 | 0006 | Security rules, scan_secrets.sh |
 | 1.9.0 | 0006 | Session auth (cookie), login/logout, remove tokens |
 | 2.0.0 | 0007 | Chat UI /app, conversation history, chat_messages table |
+| 2.1.0 | 0007 | Chat commands (/help, /next, etc), sidebar status, localStorage persist |
