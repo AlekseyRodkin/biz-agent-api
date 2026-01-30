@@ -22,34 +22,25 @@ TIMECODE_PATTERNS = [
 ]
 
 # Tech noise phrases (case insensitive)
+# NOTE: Patterns must be specific to avoid false positives
 TECH_NOISE_PHRASES = [
-    # Audio/video
-    r'слышно ли меня',
-    r'меня слышно',
-    r'слышно\?',
-    r'микрофон',
-    r'звук.*включ',
-    r'включи.*звук',
-    # Zoom/online
-    r'в zoom',
-    r'в зум',
-    r'zoom.*подключ',
-    r'подключ.*zoom',
-    r'удаленно.*слуша',
-    # Chat
-    r'напишите.*в чат',
-    r'в чатик',
-    r'пишите в чат',
-    # Screen sharing
-    r'видите.*экран',
-    r'на экране.*видно',
-    r'демонстрац.*экран',
-    # Technical issues
-    r'технические.*проблем',
-    r'связь.*прерв',
-    # Session management
-    r'раз,?\s*два,?\s*три',
-    r'проверка.*связи',
+    # Audio/video checks (specific phrases only)
+    r'слышно ли меня\??',
+    r'меня слышно\??',
+    r'вы меня слышите\??',
+    r'включите микрофон',
+    r'выключите микрофон',
+    # Zoom/online specific
+    r'подключитесь.*zoom',
+    r'в zoom.*подключ',
+    r'через zoom',
+    # Chat instructions
+    r'напишите в чат',
+    r'пишите в чатик',
+    r'в чатик напишите',
+    # Session start phrases
+    r'^раз,?\s*два,?\s*три',
+    r'проверка связи',
 ]
 
 TECH_NOISE_COMPILED = [re.compile(p, re.IGNORECASE) for p in TECH_NOISE_PHRASES]
