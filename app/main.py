@@ -44,7 +44,7 @@ from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESS
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.2.4"
+    version="2.3.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
