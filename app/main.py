@@ -820,6 +820,25 @@ async def chat_send_endpoint(request: ChatSendRequest, _: str = Depends(require_
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/debug/chat/send")
+async def debug_chat_send_endpoint(request: ChatSendRequest, req: Request):
+    """DEBUG ONLY: Send a chat message without auth. Only works from localhost."""
+    client_host = req.client.host if req.client else ""
+    if client_host not in ["127.0.0.1", "localhost", "::1"]:
+        raise HTTPException(status_code=403, detail="Debug endpoint only accessible from localhost")
+    try:
+        if request.mode not in ["ask", "study", "architect"]:
+            raise HTTPException(status_code=400, detail="Invalid mode. Use: ask, study, architect")
+        if not request.message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        result = process_chat_message(USER_ID, request.mode, request.message)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/chat/status")
 async def chat_status_endpoint(_: str = Depends(require_session)):
     """Get chat status info for UI header. Requires session."""
