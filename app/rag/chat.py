@@ -8,6 +8,7 @@ from app.rag.architect_session import architect_session
 from app.rag.rituals import daily_focus, weekly_review
 from app.rag.module_review import module_review
 from app.rag.actions import create_actions_from_plan, get_actions_status
+from app.rag.course_map import get_course_progress
 
 
 # Command definitions for /help
@@ -269,7 +270,22 @@ def get_chat_status(user_id: str) -> dict:
         .eq("mode", "architect")
         .execute().data or [])
 
-    # Get course totals for progress display
+    # Get methodology-based course progress
+    course_progress_data = get_course_progress(user_id)
+
+    # Extract methodology progress
+    methodology_current = 0
+    methodology_total = course_progress_data.get("total_methodology_lectures", 19)
+    methodology_percent = course_progress_data.get("percent_methodology", 0)
+
+    if course_progress_data.get("started") and course_progress_data.get("current"):
+        current_info = course_progress_data["current"]
+        methodology_current = current_info.get("lecture_index", 0)
+        # Include completed + partial progress
+        completed_count = len(course_progress_data.get("completed_lectures", []))
+        methodology_current = completed_count  # Show completed, not current index
+
+    # Also get chunk-based progress as technical metric
     course_stats = client.table("course_chunks") \
         .select("id", count="exact") \
         .execute()
@@ -278,9 +294,6 @@ def get_chat_status(user_id: str) -> dict:
     current_chunk = 0
     if progress:
         current_chunk = progress.get("current_sequence_order", 0)
-
-    # Get actions status
-    actions_status = get_actions_status(user_id)
 
     # Get blocked actions count
     blocked_actions = client.table("action_items") \
@@ -329,7 +342,12 @@ def get_chat_status(user_id: str) -> dict:
             "architect": architect_count
         },
         "sidebar": {
-            "course_progress": {
+            "methodology": {
+                "completed": methodology_current,
+                "total": methodology_total,
+                "percent": round(methodology_percent, 1)
+            },
+            "chunks": {
                 "current": current_chunk,
                 "total": total_chunks
             },

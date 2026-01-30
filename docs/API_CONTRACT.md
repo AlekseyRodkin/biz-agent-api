@@ -1,4 +1,4 @@
-# API Contract v2.1.0
+# API Contract v2.2.0
 
 ## Overview
 
@@ -219,20 +219,27 @@ Messages starting with `/` are processed as commands:
 
 Commands work in any mode and are saved to chat history.
 
-### GET /chat/status Response (v2.1.0)
+### GET /chat/status Response (v2.2.0)
 
 ```json
 {
   "progress": {...},
   "message_counts": {"ask": 5, "study": 10, "architect": 2},
   "sidebar": {
-    "course_progress": {"current": 15, "total": 100},
+    "methodology": {
+      "completed": 3,
+      "total": 19,
+      "percent": 15.8
+    },
+    "chunks": {"current": 120, "total": 1565},
     "blockers": 2,
     "off_track_metrics": 1,
     "actions_in_progress": 3
   }
 }
 ```
+
+**Note:** `methodology` shows progress by methodology lectures (primary metric), `chunks` is technical metric.
 
 ---
 
@@ -470,3 +477,4 @@ Commands work in any mode and are saved to chat history.
 | 1.9.0 | 0006 | Session auth (cookie), login/logout, remove tokens |
 | 2.0.0 | 0007 | Chat UI /app, conversation history, chat_messages table |
 | 2.1.0 | 0007 | Chat commands (/help, /next, etc), sidebar status, localStorage persist |
+| 2.2.0 | 0007 | Progress by methodology lectures instead of chunks |

@@ -36,7 +36,7 @@ from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESS
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.1.0"
+    version="2.2.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -160,7 +160,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "2.1.0",
+        "version": "2.2.0",
         "schema_version": SCHEMA_VERSION
     }
 

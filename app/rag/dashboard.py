@@ -2,41 +2,26 @@
 from datetime import datetime, timedelta
 from app.db.supabase_client import get_client
 from app.rag.metrics import calculate_impact
+from app.rag.course_map import get_course_progress
 
 
 def get_course_progress_summary(user_id: str) -> dict:
-    """Get course progress summary."""
-    client = get_client()
+    """Get course progress summary based on methodology lectures."""
+    # Use proper methodology-based progress calculation
+    course_progress = get_course_progress(user_id)
 
-    # Get user progress
-    progress = client.table("user_progress") \
-        .select("current_lecture_id, current_sequence_order, current_module, current_day") \
-        .eq("user_id", user_id) \
-        .single() \
-        .execute()
-
-    # Get total methodology lectures
-    total = client.table("course_lectures") \
-        .select("lecture_id", count="exact") \
-        .eq("speaker_type", "methodology") \
-        .execute()
-
-    total_lectures = total.count or 0
-    completed = 0
+    total_lectures = course_progress.get("total_methodology_lectures", 19)
+    completed = len(course_progress.get("completed_lectures", []))
+    progress_pct = course_progress.get("percent_methodology", 0)
     current = None
 
-    if progress.data:
-        # sequence_order is 1-based, so completed = sequence_order - 1
-        seq = progress.data.get("current_sequence_order", 1)
-        completed = max(0, seq - 1)
-        current = progress.data.get("current_lecture_id")
-
-    progress_pct = round((completed / total_lectures * 100) if total_lectures > 0 else 0, 1)
+    if course_progress.get("started") and course_progress.get("current"):
+        current = course_progress["current"].get("lecture_id")
 
     return {
         "total_lectures": total_lectures,
         "completed": completed,
-        "progress_percent": progress_pct,
+        "progress_percent": round(progress_pct, 1),
         "current_lecture": current
     }
 
@@ -194,5 +179,5 @@ def executive_dashboard(user_id: str) -> dict:
         "actions": get_actions_summary(user_id),
         "metrics": get_metrics_summary(user_id),
         "key_risks": get_key_risks(user_id),
-        "api_version": "1.5.0"
+        "api_version": "2.2.0"
     }

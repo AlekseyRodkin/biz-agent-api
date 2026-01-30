@@ -191,7 +191,10 @@
         </div>
         <div class="status-block mb-4">
             <div class="progress-info mb-2">
-                <i class="bi bi-mortarboard"></i> Курс: <span id="courseProgress">-</span>
+                <i class="bi bi-mortarboard"></i> Методология: <span id="methodologyProgress">0/19</span>
+            </div>
+            <div class="progress-info mb-2 ps-3" style="font-size: 0.75rem;">
+                <span class="text-muted"><span id="methodologyPercent">0</span>% пройдено</span>
             </div>
             <div class="progress-info mb-2">
                 <i class="bi bi-play-circle"></i> В работе: <span id="actionsInProgress" class="badge bg-primary">0</span>
@@ -342,12 +345,13 @@
         function updateSidebarStatus(sidebar) {
             if (!sidebar) return;
 
-            // Course progress
-            const cp = sidebar.course_progress || {};
-            const current = cp.current || 0;
-            const total = cp.total || 1;
-            const percent = Math.round((current / total) * 100);
-            document.getElementById('courseProgress').textContent = `${current}/${total} (${percent}%)`;
+            // Methodology progress (primary metric)
+            const meth = sidebar.methodology || {};
+            const completed = meth.completed || 0;
+            const total = meth.total || 19;
+            const percent = meth.percent || 0;
+            document.getElementById('methodologyProgress').textContent = `${completed}/${total}`;
+            document.getElementById('methodologyPercent').textContent = percent.toFixed(1);
 
             // Actions in progress
             const aip = document.getElementById('actionsInProgress');
