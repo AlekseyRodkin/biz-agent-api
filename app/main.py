@@ -4,8 +4,16 @@ from fastapi.responses import FileResponse, PlainTextResponse, HTMLResponse, Red
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import os
+import logging
 from typing import Optional
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+
+# Configure logging for all modules
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, reset_progress, process_user_answer, get_user_progress
@@ -820,23 +828,6 @@ async def chat_send_endpoint(request: ChatSendRequest, _: str = Depends(require_
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/debug/chat/send")
-async def debug_chat_send_endpoint(request: ChatSendRequest, req: Request):
-    """DEBUG ONLY: Send a chat message without auth. Only works from localhost."""
-    client_host = req.client.host if req.client else ""
-    if client_host not in ["127.0.0.1", "localhost", "::1"]:
-        raise HTTPException(status_code=403, detail="Debug endpoint only accessible from localhost")
-    try:
-        if request.mode not in ["ask", "study", "architect"]:
-            raise HTTPException(status_code=400, detail="Invalid mode. Use: ask, study, architect")
-        if not request.message.strip():
-            raise HTTPException(status_code=400, detail="Message cannot be empty")
-        result = process_chat_message(USER_ID, request.mode, request.message)
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/chat/status")
