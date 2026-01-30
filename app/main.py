@@ -168,7 +168,7 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "2.2.4",
+        "version": app.version,
         "schema_version": SCHEMA_VERSION
     }
 
