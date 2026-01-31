@@ -215,7 +215,7 @@ def architect_session(
         "scope": scope,
         "constraints": constraints,
         "time_horizon_days": time_horizon_days,
-        "answer": answer,
+        "plan": answer,  # Note: "plan" for consistency with chat.py
         "sources": {
             "decisions": [
                 {"id": str(d.get("id", "")), "topic": d.get("related_topic", "")}
