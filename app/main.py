@@ -39,12 +39,13 @@ from app.rag.guardrails import (
     validate_actions_from_plan, validate_action_block,
     validate_action_link_metric, check_duplicate_plan, check_duplicate_metric
 )
+from app.db.supabase_client import get_client
 from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESSION_TTL_DAYS
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.3.0"
+    version="2.4.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -836,6 +837,49 @@ async def chat_status_endpoint(_: str = Depends(require_session)):
     try:
         status = get_chat_status(USER_ID)
         return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/source/chunk/{chunk_id}")
+async def get_source_chunk(chunk_id: str, _: str = Depends(require_session)):
+    """Get full source content for a chunk. Requires session."""
+    try:
+        client = get_client()
+
+        # Get chunk with lecture info
+        result = client.table("course_chunks") \
+            .select("chunk_id, lecture_id, content, clean_content, content_type, speaker_type, sequence_order, metadata") \
+            .eq("chunk_id", chunk_id) \
+            .execute()
+
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(status_code=404, detail=f"Chunk {chunk_id} not found")
+
+        chunk = result.data[0]
+
+        # Get lecture details
+        lecture_result = client.table("course_lectures") \
+            .select("lecture_title, speaker_name") \
+            .eq("lecture_id", chunk["lecture_id"]) \
+            .execute()
+
+        lecture = lecture_result.data[0] if lecture_result.data else {}
+
+        return {
+            "chunk_id": chunk["chunk_id"],
+            "lecture_id": chunk["lecture_id"],
+            "lecture_title": lecture.get("lecture_title", ""),
+            "speaker_type": chunk["speaker_type"],
+            "speaker_name": lecture.get("speaker_name", ""),
+            "content_type": chunk["content_type"],
+            "sequence_order": chunk["sequence_order"],
+            "content_raw": chunk["content"],
+            "content_clean": chunk.get("clean_content"),
+            "metadata": chunk.get("metadata", {})
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

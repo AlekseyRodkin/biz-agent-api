@@ -146,6 +146,25 @@
             border-radius: 4px;
             margin-top: 0.5rem;
         }
+        .source-link {
+            cursor: pointer;
+            color: #0d6efd;
+            text-decoration: underline;
+        }
+        .source-link:hover {
+            color: #0a58ca;
+        }
+        .source-content-viewer {
+            max-height: 60vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+        }
         @media (max-width: 768px) {
             .sidebar { display: none; }
             .main-content { margin-left: 0; }
@@ -258,6 +277,55 @@
                     <span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
                     AI is thinking
                 </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Source Viewer Modal -->
+    <div class="modal fade" id="sourceModal" tabindex="-1" aria-labelledby="sourceModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="sourceModalLabel">Source Viewer</h5>
+                        <small class="text-muted" id="sourceModalSubtitle"></small>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="sourceTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="raw-tab" data-bs-toggle="tab" data-bs-target="#raw-content" type="button" role="tab">
+                                <i class="bi bi-file-text"></i> Raw
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="clean-tab" data-bs-toggle="tab" data-bs-target="#clean-content" type="button" role="tab">
+                                <i class="bi bi-stars"></i> Clean
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="meta-tab" data-bs-toggle="tab" data-bs-target="#meta-content" type="button" role="tab">
+                                <i class="bi bi-info-circle"></i> Meta
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="sourceTabContent">
+                        <div class="tab-pane fade show active" id="raw-content" role="tabpanel">
+                            <div class="source-content-viewer" id="sourceRawText">Loading...</div>
+                        </div>
+                        <div class="tab-pane fade" id="clean-content" role="tabpanel">
+                            <div class="source-content-viewer" id="sourceCleanText">Loading...</div>
+                        </div>
+                        <div class="tab-pane fade" id="meta-content" role="tabpanel">
+                            <div class="source-content-viewer" id="sourceMetaText" style="font-family: monospace; font-size: 0.8rem;">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <span class="text-muted me-auto" id="sourceModalInfo"></span>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
             </div>
         </div>
     </div>
@@ -406,12 +474,16 @@
             let sourcesHtml = '';
 
             if (sources && (sources.course?.length || sources.company?.length)) {
+                const courseLinks = (sources.course || []).slice(0, 5).map(s =>
+                    `<span class="source-link" onclick="openSourceModal('${s.chunk_id}')">${s.chunk_id}</span>`
+                ).join(', ');
+
                 sourcesHtml = `
                     <div class="sources-toggle mt-2" onclick="toggleSources(this)">
                         <i class="bi bi-info-circle"></i> Show sources
                     </div>
                     <div class="sources-content" style="display: none;">
-                        ${sources.course?.length ? `<div><strong>Course:</strong> ${sources.course.map(s => s.lecture_title || s.lecture_id).slice(0, 3).join(', ')}</div>` : ''}
+                        ${sources.course?.length ? `<div><strong>Course:</strong> ${courseLinks}</div>` : ''}
                         ${sources.company?.length ? `<div><strong>Memory:</strong> ${sources.company.length} decisions</div>` : ''}
                     </div>
                 `;
@@ -435,6 +507,58 @@
             el.innerHTML = isHidden ?
                 '<i class="bi bi-info-circle"></i> Hide sources' :
                 '<i class="bi bi-info-circle"></i> Show sources';
+        }
+
+        async function openSourceModal(chunkId) {
+            const modal = new bootstrap.Modal(document.getElementById('sourceModal'));
+            document.getElementById('sourceModalLabel').textContent = chunkId;
+            document.getElementById('sourceModalSubtitle').textContent = 'Loading...';
+            document.getElementById('sourceRawText').textContent = 'Loading...';
+            document.getElementById('sourceCleanText').textContent = 'Loading...';
+            document.getElementById('sourceMetaText').textContent = 'Loading...';
+            document.getElementById('sourceModalInfo').textContent = '';
+
+            modal.show();
+
+            try {
+                const response = await fetchWithAuth(`/source/chunk/${chunkId}`);
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to load source');
+                }
+
+                const data = await response.json();
+
+                // Update modal header
+                document.getElementById('sourceModalLabel').textContent = data.chunk_id;
+                document.getElementById('sourceModalSubtitle').textContent =
+                    `${data.lecture_title || data.lecture_id} — ${data.speaker_name || data.speaker_type}`;
+
+                // Update content tabs
+                document.getElementById('sourceRawText').textContent = data.content_raw || '(no content)';
+                document.getElementById('sourceCleanText').textContent = data.content_clean || '(no clean version)';
+
+                // Format metadata
+                const metaInfo = {
+                    lecture_id: data.lecture_id,
+                    speaker_type: data.speaker_type,
+                    content_type: data.content_type,
+                    sequence_order: data.sequence_order,
+                    ...(data.metadata || {})
+                };
+                document.getElementById('sourceMetaText').textContent = JSON.stringify(metaInfo, null, 2);
+
+                // Update footer info
+                const rawLen = (data.content_raw || '').length;
+                const cleanLen = (data.content_clean || '').length;
+                document.getElementById('sourceModalInfo').textContent =
+                    `Raw: ${rawLen} chars` + (cleanLen ? ` | Clean: ${cleanLen} chars` : '');
+
+            } catch (error) {
+                console.error('Failed to load source:', error);
+                document.getElementById('sourceRawText').textContent = `Error: ${error.message}`;
+                document.getElementById('sourceCleanText').textContent = `Error: ${error.message}`;
+            }
         }
 
         function sendQuickAction(message) {
