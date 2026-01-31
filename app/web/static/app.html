@@ -693,6 +693,10 @@
             // Line breaks
             html = html.replace(/\n/g, '<br>');
 
+            // Source open buttons: [OPEN_SOURCE:chunk_id]
+            html = html.replace(/\[OPEN_SOURCE:([^\]]+)\]/g,
+                '<button class="btn btn-sm btn-outline-primary mt-1" onclick="openSourceModal(\'$1\')"><i class="bi bi-eye"></i> Открыть</button>');
+
             return html;
         }
 

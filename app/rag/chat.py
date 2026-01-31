@@ -13,6 +13,7 @@ from app.rag.rituals import daily_focus, weekly_review
 from app.rag.module_review import module_review
 from app.rag.actions import create_actions_from_plan, get_actions_status
 from app.rag.course_map import get_course_progress
+from app.rag.search import search, format_search_results_for_chat, detect_search_intent
 
 
 # Welcome message for Study mode (auto-start)
@@ -207,6 +208,27 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
 
     response_content = ""
     metadata = {}
+
+    # Check for search intent (works in any mode)
+    is_search, search_query, search_scope = detect_search_intent(message)
+    if is_search and search_query:
+        logger.info(f"[{request_id}] CHAT_PIPELINE_START type=search scope={search_scope}")
+        search_result = search(search_query, user_id, search_scope, limit=8)
+        logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=search results={search_result['total']}")
+        response_content = format_search_results_for_chat(search_result)
+        metadata = {
+            "type": "search",
+            "query": search_query,
+            "scope": search_scope,
+            "results": search_result["results"]
+        }
+        save_message(user_id, mode, "assistant", response_content, metadata)
+        return {
+            "role": "assistant",
+            "content": response_content,
+            "metadata": metadata,
+            "mode": mode
+        }
 
     # Check for commands (start with /)
     if message.strip().startswith("/"):

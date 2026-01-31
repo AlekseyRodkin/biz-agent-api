@@ -33,6 +33,7 @@ from app.rag.metrics import (
 from app.rag.dashboard import executive_dashboard
 from app.rag.exports import export_decisions, export_actions, export_metrics, export_plans
 from app.rag.chat import get_history, process_chat_message, get_chat_status, ensure_study_welcome
+from app.rag.search import search as rag_search
 from app.rag.guardrails import (
     GuardrailError, SCHEMA_VERSION,
     validate_architect_save, validate_metric_create,
@@ -45,7 +46,7 @@ from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESS
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.4.0"
+    version="2.5.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -789,6 +790,12 @@ class ChatSendRequest(BaseModel):
     message: str
 
 
+class SearchRequest(BaseModel):
+    query: str
+    scope: str = "all"  # all, course, methodology, case_study, memory
+    limit: int = 8
+
+
 @app.get("/chat/history")
 async def chat_history_endpoint(
     mode: Optional[str] = None,
@@ -837,6 +844,36 @@ async def chat_status_endpoint(_: str = Depends(require_session)):
     try:
         status = get_chat_status(USER_ID)
         return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/search")
+async def search_endpoint(request: SearchRequest, _: str = Depends(require_session)):
+    """
+    Semantic search across course and memory. Requires session.
+
+    Scopes:
+    - all: search everywhere
+    - course: all course chunks
+    - methodology: only Верховский lectures
+    - case_study: only case study lectures
+    - memory: only company memory (user decisions)
+    """
+    try:
+        if not request.query or len(request.query.strip()) < 2:
+            raise HTTPException(status_code=400, detail="Query must be at least 2 characters")
+
+        valid_scopes = ["all", "course", "methodology", "case_study", "memory"]
+        if request.scope not in valid_scopes:
+            raise HTTPException(status_code=400, detail=f"Scope must be one of: {', '.join(valid_scopes)}")
+
+        limit = min(max(request.limit, 1), 20)  # Clamp between 1 and 20
+
+        result = rag_search(request.query, USER_ID, request.scope, limit)
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
