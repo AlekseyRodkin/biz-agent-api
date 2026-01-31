@@ -169,6 +169,40 @@
             .sidebar { display: none; }
             .main-content { margin-left: 0; }
         }
+        .welcome-screen {
+            max-width: 500px;
+            margin: 2rem auto;
+            text-align: center;
+        }
+        .welcome-screen h2 {
+            color: #212529;
+            margin-bottom: 1rem;
+        }
+        .welcome-screen p {
+            color: #6c757d;
+            margin-bottom: 2rem;
+        }
+        .welcome-btn {
+            display: block;
+            width: 100%;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 12px;
+            text-align: left;
+            font-size: 1rem;
+        }
+        .welcome-btn i {
+            font-size: 1.5rem;
+            margin-right: 1rem;
+            vertical-align: middle;
+        }
+        .welcome-btn small {
+            display: block;
+            margin-top: 0.25rem;
+            margin-left: 2.5rem;
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -206,23 +240,26 @@
         </nav>
 
         <div class="mb-3 mt-4">
-            <small class="text-muted">STATUS</small>
+            <small class="text-muted">ПРОГРЕСС</small>
         </div>
         <div class="status-block mb-4">
             <div class="progress-info mb-2">
-                <i class="bi bi-mortarboard"></i> Методология: <span id="methodologyProgress">0/19</span>
+                <i class="bi bi-mortarboard"></i> Курс
             </div>
-            <div class="progress-info mb-2 ps-3" style="font-size: 0.75rem;">
-                <span class="text-muted"><span id="methodologyPercent">0</span>% пройдено</span>
+            <div class="progress-info mb-1 ps-3" style="font-size: 0.8rem;">
+                Пройдено <span id="methodologyProgress">0 из 19</span> лекций
             </div>
-            <div class="progress-info mb-2">
-                <i class="bi bi-play-circle"></i> В работе: <span id="actionsInProgress" class="badge bg-primary">0</span>
-            </div>
-            <div class="progress-info mb-2">
-                <i class="bi bi-exclamation-triangle"></i> Блокеры: <span id="blockersCount" class="badge bg-danger">0</span>
+            <div class="progress mb-2 ms-3" style="height: 6px; width: 80%;">
+                <div class="progress-bar bg-success" id="progressBar" role="progressbar" style="width: 0%"></div>
             </div>
             <div class="progress-info mb-2">
-                <i class="bi bi-graph-down"></i> Off-track: <span id="offTrackCount" class="badge bg-warning text-dark">0</span>
+                <i class="bi bi-play-circle"></i> В работе <span id="actionsInProgress" class="badge bg-primary ms-1">0</span>
+            </div>
+            <div class="progress-info mb-2">
+                <i class="bi bi-exclamation-triangle"></i> Блокеры <span id="blockersCount" class="badge bg-danger ms-1">0</span>
+            </div>
+            <div class="progress-info mb-2">
+                <i class="bi bi-graph-down"></i> Off-track <span id="offTrackCount" class="badge bg-warning text-dark ms-1">0</span>
             </div>
         </div>
 
@@ -252,10 +289,26 @@
 
         <!-- Chat Container -->
         <div class="chat-container" id="chatContainer">
-            <div class="text-center text-muted py-5" id="emptyState">
-                <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
-                <p class="mt-3">Start a conversation</p>
-                <p class="small">Use quick actions below or type a message</p>
+            <div id="emptyState">
+                <div class="welcome-screen">
+                    <h2>Добро пожаловать!</h2>
+                    <p>Я помогу освоить методологию внедрения AI в бизнес и создать план для твоей компании.</p>
+
+                    <button class="btn btn-primary welcome-btn" onclick="startLearning()">
+                        <i class="bi bi-book"></i> Начать обучение
+                        <small>Пройти курс по методологии Верховского</small>
+                    </button>
+
+                    <button class="btn btn-outline-primary welcome-btn" onclick="startArchitect()">
+                        <i class="bi bi-diagram-3"></i> Сделать план внедрения
+                        <small>Получить структурированный план на 14 дней</small>
+                    </button>
+
+                    <button class="btn btn-outline-secondary welcome-btn" onclick="showDailyFocus()">
+                        <i class="bi bi-calendar-check"></i> Показать фокус дня
+                        <small>Посмотреть задачи и приоритеты на сегодня</small>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -418,23 +471,29 @@
             const completed = meth.completed || 0;
             const total = meth.total || 19;
             const percent = meth.percent || 0;
-            document.getElementById('methodologyProgress').textContent = `${completed}/${total}`;
-            document.getElementById('methodologyPercent').textContent = percent.toFixed(1);
+            document.getElementById('methodologyProgress').textContent = `${completed} из ${total}`;
+
+            // Update progress bar
+            const progressBar = document.getElementById('progressBar');
+            if (progressBar) {
+                progressBar.style.width = `${percent}%`;
+                progressBar.setAttribute('aria-valuenow', percent);
+            }
 
             // Actions in progress
             const aip = document.getElementById('actionsInProgress');
             aip.textContent = sidebar.actions_in_progress || 0;
-            aip.className = sidebar.actions_in_progress > 0 ? 'badge bg-primary' : 'badge bg-secondary';
+            aip.className = sidebar.actions_in_progress > 0 ? 'badge bg-primary ms-1' : 'badge bg-secondary ms-1';
 
             // Blockers
             const bc = document.getElementById('blockersCount');
             bc.textContent = sidebar.blockers || 0;
-            bc.className = sidebar.blockers > 0 ? 'badge bg-danger' : 'badge bg-secondary';
+            bc.className = sidebar.blockers > 0 ? 'badge bg-danger ms-1' : 'badge bg-secondary ms-1';
 
             // Off-track metrics
             const otc = document.getElementById('offTrackCount');
             otc.textContent = sidebar.off_track_metrics || 0;
-            otc.className = sidebar.off_track_metrics > 0 ? 'badge bg-warning text-dark' : 'badge bg-secondary';
+            otc.className = sidebar.off_track_metrics > 0 ? 'badge bg-warning text-dark ms-1' : 'badge bg-secondary ms-1';
         }
 
         async function loadHistory() {
@@ -473,18 +532,32 @@
             const sources = msg.metadata?.sources;
             let sourcesHtml = '';
 
-            if (sources && (sources.course?.length || sources.company?.length)) {
-                const courseLinks = (sources.course || []).slice(0, 5).map(s =>
-                    `<span class="source-link" onclick="openSourceModal('${s.chunk_id}')">${s.chunk_id}</span>`
-                ).join(', ');
+            // Combine course (from Ask) and methodology (from Study) sources
+            const courseItems = sources?.course || sources?.methodology || [];
+            const memoryItems = sources?.company || sources?.memory || [];
+            const casesItems = sources?.cases || [];
 
+            if (courseItems.length || memoryItems.length || casesItems.length) {
+                const courseLinks = courseItems.slice(0, 5).map(s => {
+                    // Show lecture_title if available, otherwise lecture_id, fallback to chunk_id
+                    const label = s.lecture_title || s.lecture_id || s.chunk_id;
+                    return `<span class="source-link" onclick="openSourceModal('${s.chunk_id}')" title="${s.chunk_id}">${label}</span>`;
+                }).join(', ');
+
+                const casesLinks = casesItems.slice(0, 3).map(s => {
+                    const label = s.lecture_title || s.chunk_id;
+                    return `<span class="source-link" onclick="openSourceModal('${s.chunk_id}')" title="${s.chunk_id}">${label}</span>`;
+                }).join(', ');
+
+                const totalCount = courseItems.length + memoryItems.length + casesItems.length;
                 sourcesHtml = `
                     <div class="sources-toggle mt-2" onclick="toggleSources(this)">
-                        <i class="bi bi-info-circle"></i> Show sources
+                        <i class="bi bi-link-45deg"></i> Источники (${totalCount})
                     </div>
                     <div class="sources-content" style="display: none;">
-                        ${sources.course?.length ? `<div><strong>Course:</strong> ${courseLinks}</div>` : ''}
-                        ${sources.company?.length ? `<div><strong>Memory:</strong> ${sources.company.length} decisions</div>` : ''}
+                        ${courseItems.length ? `<div><strong>Методология:</strong> ${courseLinks}</div>` : ''}
+                        ${casesItems.length ? `<div><strong>Кейсы:</strong> ${casesLinks}</div>` : ''}
+                        ${memoryItems.length ? `<div><strong>Память:</strong> ${memoryItems.length} решений</div>` : ''}
                     </div>
                 `;
             }
@@ -712,6 +785,26 @@
             } catch (error) {
                 console.error('Failed to load status:', error);
             }
+        }
+
+        // Welcome screen actions
+        function startLearning() {
+            switchMode('study');
+            document.getElementById('messageInput').value = 'Поехали!';
+            sendMessage();
+        }
+
+        function startArchitect() {
+            switchMode('architect');
+            const input = document.getElementById('messageInput');
+            input.focus();
+            input.placeholder = 'Опиши цель: «Автоматизировать обработку заявок»...';
+        }
+
+        async function showDailyFocus() {
+            switchMode('ask');
+            document.getElementById('messageInput').value = '/daily';
+            sendMessage();
         }
 
         // Initialize

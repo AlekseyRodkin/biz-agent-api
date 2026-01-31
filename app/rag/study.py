@@ -320,9 +320,9 @@ def study_next(user_id: str) -> dict:
     return {
         "answer": answer,
         "sources": {
-            "methodology": [{"chunk_id": c["chunk_id"], "lecture_id": c["lecture_id"]} for c in chunks],
+            "methodology": [{"chunk_id": c["chunk_id"], "lecture_id": c["lecture_id"], "lecture_title": c.get("lecture_title", "")} for c in chunks],
             "memory": [{"id": str(m.get("id", "")), "topic": m.get("related_topic", "")} for m in memory],
-            "cases": [{"chunk_id": c["chunk_id"]} for c in cases],
+            "cases": [{"chunk_id": c["chunk_id"], "lecture_title": c.get("lecture_title", "")} for c in cases],
             "conflicts": [{"decision_id": c["decision_id"], "topic": c["topic"]} for c in conflicts]
         },
         "progress": get_user_progress(user_id),
