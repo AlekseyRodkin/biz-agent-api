@@ -37,32 +37,30 @@ def search(
 
     # Search course chunks
     if search_course:
-        filter_params = {}
-        if scope == "methodology":
-            filter_params = {"speaker_type": "methodology"}
-        elif scope == "case_study":
-            filter_params = {"speaker_type": "case_study"}
+        # Get more results for post-filtering by speaker_type
+        fetch_count = limit * 3 if scope in ["methodology", "case_study"] else limit * 2
 
         course_results = client.rpc(
             "match_course_chunks",
             {
                 "query_embedding": embedding,
-                "filter": filter_params,
-                "match_count": limit * 2  # Get more to filter later
+                "filter": {},  # Filter doesn't work for speaker_type column
+                "match_count": fetch_count
             }
         ).execute()
 
-        for item in (course_results.data or [])[:limit]:
-            # Get lecture info
-            lecture = client.table("course_lectures") \
-                .select("lecture_title, speaker_name") \
-                .eq("lecture_id", item.get("lecture_id", "")) \
-                .execute()
+        # Post-filter by speaker_type if needed
+        filtered_results = course_results.data or []
+        if scope == "methodology":
+            filtered_results = [r for r in filtered_results if r.get("speaker_type") == "methodology"]
+        elif scope == "case_study":
+            filtered_results = [r for r in filtered_results if r.get("speaker_type") == "case_study"]
 
-            lecture_info = lecture.data[0] if lecture.data else {}
-
-            # Get clean content if available
+        for item in filtered_results[:limit]:
+            # RPC already returns lecture_title and speaker_name from join
             content = item.get("content", "")
+
+            # Get clean content if available and enabled
             if USE_CLEAN_CONTENT:
                 chunk_data = client.table("course_chunks") \
                     .select("clean_content") \
@@ -80,8 +78,8 @@ def search(
                 "type": "course",
                 "chunk_id": item.get("chunk_id"),
                 "lecture_id": item.get("lecture_id"),
-                "lecture_title": lecture_info.get("lecture_title", ""),
-                "speaker_name": lecture_info.get("speaker_name", ""),
+                "lecture_title": item.get("lecture_title", ""),
+                "speaker_name": item.get("speaker_name", ""),
                 "speaker_type": item.get("speaker_type", ""),
                 "similarity": round(item.get("similarity", 0), 3),
                 "snippet": snippet
