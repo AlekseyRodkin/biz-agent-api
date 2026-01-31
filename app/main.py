@@ -47,7 +47,7 @@ from app.llm.deepseek_client import LLMError
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.8.2"
+    version="2.8.3"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")

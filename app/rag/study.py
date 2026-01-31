@@ -122,11 +122,36 @@ def reset_progress(user_id: str) -> dict:
 def get_next_methodology_chunks(progress: dict, limit: int = 5) -> list[dict]:
     """Get next methodology chunks after current position."""
     client = get_client()
-    
+
     current_lecture_id = progress.get("current_lecture_id")
     current_seq = progress.get("current_sequence_order", 0)
-    
-    # Get chunks from current lecture, sequence > current
+
+    # CASE 1: Fresh start (current_lecture_id is None) - get first methodology lecture
+    if not current_lecture_id:
+        first_lecture = client.table("course_lectures") \
+            .select("lecture_id") \
+            .eq("speaker_type", "methodology") \
+            .order("module", desc=False) \
+            .order("day", desc=False) \
+            .order("lecture_order", desc=False) \
+            .limit(1) \
+            .execute()
+
+        if not first_lecture.data:
+            return []  # No methodology lectures in course
+
+        first_lecture_id = first_lecture.data[0]["lecture_id"]
+
+        chunks = client.table("course_chunks") \
+            .select("*") \
+            .eq("lecture_id", first_lecture_id) \
+            .order("sequence_order", desc=False) \
+            .limit(limit) \
+            .execute()
+
+        return chunks.data or []
+
+    # CASE 2: Continue from current position - get chunks from current lecture
     chunks = client.table("course_chunks") \
         .select("*") \
         .eq("speaker_type", "methodology") \
@@ -135,21 +160,21 @@ def get_next_methodology_chunks(progress: dict, limit: int = 5) -> list[dict]:
         .order("sequence_order", desc=False) \
         .limit(limit) \
         .execute()
-    
+
     if chunks.data:
         return chunks.data
-    
-    # If no more chunks in current lecture, move to next methodology lecture
+
+    # CASE 3: Current lecture finished - move to next methodology lecture
     current_lecture = client.table("course_lectures") \
         .select("module, day, lecture_order") \
         .eq("lecture_id", current_lecture_id) \
         .execute()
-    
+
     if not current_lecture.data:
         return []
-    
+
     curr = current_lecture.data[0]
-    
+
     # Find next methodology lecture
     next_lecture = client.table("course_lectures") \
         .select("lecture_id") \
@@ -160,12 +185,12 @@ def get_next_methodology_chunks(progress: dict, limit: int = 5) -> list[dict]:
         .order("lecture_order", desc=False) \
         .limit(1) \
         .execute()
-    
+
     if not next_lecture.data:
         return []  # Course completed
-    
+
     next_lecture_id = next_lecture.data[0]["lecture_id"]
-    
+
     # Get first chunks from next lecture
     chunks = client.table("course_chunks") \
         .select("*") \
@@ -173,7 +198,7 @@ def get_next_methodology_chunks(progress: dict, limit: int = 5) -> list[dict]:
         .order("sequence_order", desc=False) \
         .limit(limit) \
         .execute()
-    
+
     return chunks.data or []
 
 
