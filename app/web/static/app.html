@@ -289,7 +289,16 @@
 
         <!-- Chat Container -->
         <div class="chat-container" id="chatContainer">
-            <div id="emptyState">
+            <!-- Loading State (shown first) -->
+            <div id="loadingState" class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="text-muted mt-2">Загрузка...</p>
+            </div>
+
+            <!-- Welcome State (shown when no history) -->
+            <div id="welcomeState" style="display: none;">
                 <div class="welcome-screen">
                     <h2>Добро пожаловать!</h2>
                     <p>Я помогу освоить методологию внедрения AI в бизнес и создать план для твоей компании.</p>
@@ -310,6 +319,9 @@
                     </button>
                 </div>
             </div>
+
+            <!-- Messages will be rendered here -->
+            <div id="messagesContainer"></div>
         </div>
 
         <!-- Input Area -->
@@ -394,7 +406,7 @@
                 quickActions: [
                     { label: 'Поехали', icon: 'bi-play-fill', message: 'Поехали!' },
                     { label: 'Дальше', icon: 'bi-skip-forward-fill', message: 'Давай дальше' },
-                    { label: 'Сброс', icon: 'bi-arrow-counterclockwise', message: '/start' }
+                    { label: 'Сначала', icon: 'bi-arrow-counterclockwise', action: 'resetChat' }
                 ],
                 placeholder: 'Напишите ответ или «Дальше»...'
             },
@@ -405,7 +417,7 @@
                 quickActions: [
                     { label: 'Сегодня', icon: 'bi-calendar-day', message: '/daily' },
                     { label: 'Неделя', icon: 'bi-calendar-week', message: '/weekly' },
-                    { label: 'Помощь', icon: 'bi-question-circle', message: '/help' }
+                    { label: 'Сначала', icon: 'bi-arrow-counterclockwise', action: 'resetChat' }
                 ],
                 placeholder: 'Задайте вопрос про AI...'
             },
@@ -415,7 +427,7 @@
                 badgeClass: 'bg-warning text-dark',
                 quickActions: [
                     { label: 'Dashboard', icon: 'bi-speedometer2', message: '/exec' },
-                    { label: 'Помощь', icon: 'bi-question-circle', message: '/help' }
+                    { label: 'Сначала', icon: 'bi-arrow-counterclockwise', action: 'resetChat' }
                 ],
                 placeholder: 'Опишите цель внедрения AI...'
             }
@@ -450,11 +462,16 @@
 
             // Update quick actions
             const qa = document.getElementById('quickActions');
-            qa.innerHTML = config.quickActions.map(a =>
-                `<button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('${a.message}')">
+            qa.innerHTML = config.quickActions.map(a => {
+                if (a.action) {
+                    return `<button class="btn btn-outline-secondary btn-sm" onclick="${a.action}()">
+                        <i class="bi ${a.icon}"></i> ${a.label}
+                    </button>`;
+                }
+                return `<button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('${a.message}')">
                     <i class="bi ${a.icon}"></i> ${a.label}
-                </button>`
-            ).join('');
+                </button>`;
+            }).join('');
 
             // Update placeholder
             document.getElementById('messageInput').placeholder = config.placeholder;
@@ -508,20 +525,26 @@
         }
 
         function renderMessages(messages) {
-            const container = document.getElementById('chatContainer');
-            const empty = document.getElementById('emptyState');
+            const loadingState = document.getElementById('loadingState');
+            const welcomeState = document.getElementById('welcomeState');
+            const messagesContainer = document.getElementById('messagesContainer');
+
+            // Hide loading
+            loadingState.style.display = 'none';
 
             if (messages.length === 0) {
-                empty.style.display = 'block';
-                container.innerHTML = '';
-                container.appendChild(empty);
+                // Show welcome, hide messages
+                welcomeState.style.display = 'block';
+                messagesContainer.innerHTML = '';
                 return;
             }
 
-            empty.style.display = 'none';
-            container.innerHTML = messages.map(m => renderMessage(m)).join('');
+            // Hide welcome, show messages
+            welcomeState.style.display = 'none';
+            messagesContainer.innerHTML = messages.map(m => renderMessage(m)).join('');
+
             // Smooth autoscroll to last message
-            const lastMessage = container.querySelector('.message:last-child');
+            const lastMessage = messagesContainer.querySelector('.message:last-child');
             if (lastMessage) {
                 lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
@@ -727,10 +750,15 @@
                 </div>
             `;
 
-            const container = document.getElementById('chatContainer');
-            document.getElementById('emptyState').style.display = 'none';
-            container.innerHTML += errorHtml;
-            const lastMessage = container.querySelector('.message:last-child');
+            const messagesContainer = document.getElementById('messagesContainer');
+            const welcomeState = document.getElementById('welcomeState');
+            const loadingState = document.getElementById('loadingState');
+
+            welcomeState.style.display = 'none';
+            loadingState.style.display = 'none';
+
+            messagesContainer.innerHTML += errorHtml;
+            const lastMessage = messagesContainer.querySelector('.message:last-child');
             if (lastMessage) {
                 lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
@@ -742,12 +770,61 @@
             }
         }
 
+        async function resetChat() {
+            const input = document.getElementById('messageInput');
+            const typingIndicator = document.getElementById('typingIndicator');
+
+            input.disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+            typingIndicator.classList.add('active');
+
+            try {
+                const response = await fetchWithAuth('/chat/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scope: 'current' })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to reset chat');
+                }
+
+                // Clear messages and show welcome
+                const messagesContainer = document.getElementById('messagesContainer');
+                const welcomeState = document.getElementById('welcomeState');
+
+                messagesContainer.innerHTML = '';
+                welcomeState.style.display = 'block';
+                document.getElementById('messageCount').textContent = '0 messages';
+
+                // Update status
+                loadStatus();
+
+            } catch (error) {
+                console.error('Reset error:', error);
+                alert('Не удалось сбросить чат: ' + error.message);
+            } finally {
+                input.disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                typingIndicator.classList.remove('active');
+                input.focus();
+            }
+        }
+
         function appendMessage(msg) {
-            const container = document.getElementById('chatContainer');
-            document.getElementById('emptyState').style.display = 'none';
-            container.innerHTML += renderMessage(msg);
+            const messagesContainer = document.getElementById('messagesContainer');
+            const welcomeState = document.getElementById('welcomeState');
+            const loadingState = document.getElementById('loadingState');
+
+            // Hide welcome and loading when messages appear
+            welcomeState.style.display = 'none';
+            loadingState.style.display = 'none';
+
+            messagesContainer.innerHTML += renderMessage(msg);
+
             // Smooth autoscroll to last message
-            const lastMessage = container.querySelector('.message:last-child');
+            const lastMessage = messagesContainer.querySelector('.message:last-child');
             if (lastMessage) {
                 lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }

@@ -47,7 +47,7 @@ from app.llm.deepseek_client import LLMError
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.8.0"
+    version="2.8.2"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -791,6 +791,11 @@ class ChatSendRequest(BaseModel):
     message: str
 
 
+class ChatResetRequest(BaseModel):
+    scope: str = "current"  # current or all
+
+
+
 class SearchRequest(BaseModel):
     query: str
     scope: str = "all"  # all, course, methodology, case_study, memory
@@ -876,6 +881,40 @@ async def chat_send_endpoint(request: ChatSendRequest, _: str = Depends(require_
         )
 
 
+@app.post("/chat/reset")
+async def chat_reset_endpoint(request: ChatResetRequest, _: str = Depends(require_session)):
+    """Reset chat history and progress. Requires session."""
+    client = get_client()
+
+    try:
+        if request.scope == "current":
+            # Get current mode from user_progress
+            progress = client.table("user_progress").select("mode").eq("user_id", USER_ID).execute()
+            current_mode = progress.data[0]["mode"] if progress.data else "study"
+            # Delete only current mode messages
+            client.table("chat_messages").delete().eq("user_id", USER_ID).eq("mode", current_mode).execute()
+        elif request.scope == "all":
+            # Delete all messages
+            client.table("chat_messages").delete().eq("user_id", USER_ID).execute()
+        else:
+            raise HTTPException(status_code=400, detail="Scope must be 'current' or 'all'")
+
+        # Reset progress
+        client.table("user_progress").upsert({
+            "user_id": USER_ID,
+            "mode": "study",
+            "current_module": 1,
+            "current_day": 1,
+            "current_lecture_id": None,
+            "current_sequence_order": 0
+        }).execute()
+
+        return {"ok": True, "scope": request.scope}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/chat/status")
