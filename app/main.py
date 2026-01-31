@@ -42,11 +42,12 @@ from app.rag.guardrails import (
 )
 from app.db.supabase_client import get_client
 from app.config import USER_ID, APP_USERNAME, APP_PASSWORD, SESSION_SECRET, SESSION_TTL_DAYS
+from app.llm.deepseek_client import LLMError
 
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.7.0"
+    version="2.8.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -823,17 +824,56 @@ async def chat_history_endpoint(
 @app.post("/chat/send")
 async def chat_send_endpoint(request: ChatSendRequest, _: str = Depends(require_session)):
     """Send a chat message and get response. Requires session."""
+    from fastapi.responses import JSONResponse
+
+    # Validation errors - not retryable
+    if request.mode not in ["ask", "study", "architect"]:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Invalid mode. Use: ask, study, architect",
+                "request_id": None,
+                "retryable": False
+            }
+        )
+    if not request.message.strip():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Message cannot be empty",
+                "request_id": None,
+                "retryable": False
+            }
+        )
+
     try:
-        if request.mode not in ["ask", "study", "architect"]:
-            raise HTTPException(status_code=400, detail="Invalid mode. Use: ask, study, architect")
-        if not request.message.strip():
-            raise HTTPException(status_code=400, detail="Message cannot be empty")
         result = process_chat_message(USER_ID, request.mode, request.message)
         return result
-    except HTTPException:
-        raise
+
+    except LLMError as e:
+        # Structured LLM error with retryable flag
+        status_code = 504 if e.retryable else 502
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "error": e.message,
+                "request_id": e.request_id,
+                "retryable": e.retryable
+            }
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Unexpected error - potentially retryable
+        import uuid
+        request_id = str(uuid.uuid4())[:8]
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": f"Внутренняя ошибка сервера",
+                "request_id": request_id,
+                "retryable": True
+            }
+        )
 
 
 

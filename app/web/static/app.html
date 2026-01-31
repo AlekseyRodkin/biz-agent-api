@@ -639,32 +639,50 @@
             sendMessage();
         }
 
-        async function sendMessage() {
+        // Store last request for retry
+        let lastRequest = { mode: null, message: null };
+
+        async function sendMessage(retryMode = null, retryMessage = null) {
             const input = document.getElementById('messageInput');
-            const message = input.value.trim();
+            const message = retryMessage || input.value.trim();
+            const mode = retryMode || currentMode;
+
             if (!message) return;
 
-            input.value = '';
+            // Store for potential retry
+            lastRequest = { mode, message };
+
+            if (!retryMessage) {
+                input.value = '';
+            }
             input.disabled = true;
             document.getElementById('sendBtn').disabled = true;
             document.getElementById('typingIndicator').classList.add('active');
 
-            // Add user message immediately
-            appendMessage({ role: 'user', content: message, created_at: new Date().toISOString() });
+            // Add user message immediately (skip if retry)
+            if (!retryMessage) {
+                appendMessage({ role: 'user', content: message, created_at: new Date().toISOString() });
+            }
 
             try {
                 const response = await fetchWithAuth('/chat/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode: currentMode, message })
+                    body: JSON.stringify({ mode, message })
                 });
 
+                const data = await response.json();
+
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Failed to send message');
+                    // Structured error response
+                    const errorMsg = data.error || 'Не удалось получить ответ';
+                    const requestId = data.request_id || '';
+                    const retryable = data.retryable !== false;
+
+                    appendErrorMessage(errorMsg, requestId, retryable);
+                    return;
                 }
 
-                const data = await response.json();
                 appendMessage({
                     role: 'assistant',
                     content: data.content,
@@ -679,16 +697,48 @@
 
             } catch (error) {
                 console.error('Send error:', error);
-                appendMessage({
-                    role: 'assistant',
-                    content: `Error: ${error.message}`,
-                    created_at: new Date().toISOString()
-                });
+                // Network error - retryable
+                appendErrorMessage('Ошибка сети. Проверьте подключение.', '', true);
             } finally {
                 input.disabled = false;
                 document.getElementById('sendBtn').disabled = false;
                 document.getElementById('typingIndicator').classList.remove('active');
                 input.focus();
+            }
+        }
+
+        function appendErrorMessage(errorMsg, requestId, retryable) {
+            const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            const idInfo = requestId ? ` <small class="text-muted">(id: ${requestId})</small>` : '';
+            const retryBtn = retryable
+                ? `<button class="btn btn-sm btn-outline-primary ms-2" onclick="retryLastMessage()"><i class="bi bi-arrow-clockwise"></i> Повторить</button>`
+                : '';
+
+            const errorHtml = `
+                <div class="message assistant">
+                    <div class="message-content" style="background: #fff3cd; border-color: #ffc107;">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                            <span>${escapeHtml(errorMsg)}${idInfo}</span>
+                            ${retryBtn}
+                        </div>
+                    </div>
+                    <div class="message-meta">${time}</div>
+                </div>
+            `;
+
+            const container = document.getElementById('chatContainer');
+            document.getElementById('emptyState').style.display = 'none';
+            container.innerHTML += errorHtml;
+            const lastMessage = container.querySelector('.message:last-child');
+            if (lastMessage) {
+                lastMessage.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            }
+        }
+
+        function retryLastMessage() {
+            if (lastRequest.mode && lastRequest.message) {
+                sendMessage(lastRequest.mode, lastRequest.message);
             }
         }
 
