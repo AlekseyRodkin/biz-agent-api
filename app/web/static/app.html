@@ -842,11 +842,11 @@
             `;
 
             const messagesContainer = document.getElementById('messagesContainer');
-            const welcomeState = document.getElementById('welcomeState');
+            const firstVisitWelcome = document.getElementById('firstVisitWelcome');
             const loadingState = document.getElementById('loadingState');
 
-            welcomeState.style.display = 'none';
-            loadingState.style.display = 'none';
+            if (firstVisitWelcome) firstVisitWelcome.style.display = 'none';
+            if (loadingState) loadingState.style.display = 'none';
 
             messagesContainer.innerHTML += errorHtml;
             const lastMessage = messagesContainer.querySelector('.message:last-child');
@@ -881,15 +881,12 @@
                     throw new Error(error.detail || 'Failed to reset chat');
                 }
 
-                // Clear messages and show welcome
+                // Clear messages and reload status (shows mode-specific empty state)
                 const messagesContainer = document.getElementById('messagesContainer');
-                const welcomeState = document.getElementById('welcomeState');
-
                 messagesContainer.innerHTML = '';
-                welcomeState.style.display = 'block';
                 document.getElementById('messageCount').textContent = '0 messages';
 
-                // Update status
+                // Reload status to show appropriate empty state
                 loadStatus();
 
             } catch (error) {
@@ -905,12 +902,16 @@
 
         function appendMessage(msg) {
             const messagesContainer = document.getElementById('messagesContainer');
-            const welcomeState = document.getElementById('welcomeState');
+            const firstVisitWelcome = document.getElementById('firstVisitWelcome');
+            const askEmptyState = document.getElementById('askEmptyState');
+            const architectEmptyState = document.getElementById('architectEmptyState');
             const loadingState = document.getElementById('loadingState');
 
-            // Hide welcome and loading when messages appear
-            welcomeState.style.display = 'none';
-            loadingState.style.display = 'none';
+            // Hide all empty states when messages appear
+            if (firstVisitWelcome) firstVisitWelcome.style.display = 'none';
+            if (askEmptyState) askEmptyState.style.display = 'none';
+            if (architectEmptyState) architectEmptyState.style.display = 'none';
+            if (loadingState) loadingState.style.display = 'none';
 
             messagesContainer.innerHTML += renderMessage(msg);
 
