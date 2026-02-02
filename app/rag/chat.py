@@ -10,7 +10,7 @@ from app.rag.ask import ask as rag_ask
 from app.rag.study import (
     study_next, process_user_answer, reset_progress, get_user_progress,
     skip_question, get_pending_questions, get_open_questions, get_current_question,
-    all_questions_closed, get_questions_stats
+    all_questions_closed, get_questions_stats, get_pending_block_id, clear_pending_questions
 )
 from app.rag.architect_session import architect_session
 from app.rag.rituals import daily_focus, weekly_review
@@ -365,34 +365,26 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
             response_content = "✅ Прогресс сброшен. Готов к обучению!\n\nНапиши «Поехали» чтобы начать."
             metadata = {"progress": progress}
         elif is_continue:
-            # GATE LOGIC: Check if there are open questions before allowing next block
-            open_questions = get_open_questions(user_id)
+            # GATE LOGIC v2.9.4: Check pending_block_id to avoid stale gate blocking
+            pending_block_id = get_pending_block_id(user_id)
+            progress = get_user_progress(user_id)
+            current_lecture_id = progress.get("current_lecture_id") if progress else None
 
-            if open_questions:
-                # GATE BLOCKED - user must close questions first
-                current = open_questions[0]
-                stats = get_questions_stats(user_id)
-                pending = get_pending_questions(user_id)
+            # Check if pending_questions are stale (no block_id or fresh start)
+            should_skip_gate = False
+            if not pending_block_id:
+                # No block_id = fresh start or after reset
+                logger.info(f"[{request_id}] CHAT_GATE_SKIP reason=no_pending_block_id")
+                should_skip_gate = True
+            elif not current_lecture_id:
+                # No current lecture = fresh start, clear stale questions
+                logger.info(f"[{request_id}] CHAT_GATE_SKIP reason=no_current_lecture, clearing_stale")
+                clear_pending_questions(user_id)
+                should_skip_gate = True
 
-                logger.info(f"[{request_id}] CHAT_GATE_BLOCKED open_questions={len(open_questions)}")
-
-                response_content = f"⚠️ **Сначала закроем вопрос:**\n\n**{current['text']}**"
-
-                if stats["answered"] > 0 or stats["skipped"] > 0:
-                    response_content += f"\n\n✅ Закрыто: {stats['answered'] + stats['skipped']} | ⬜ Осталось: {stats['open']}"
-
-                response_content += "\n\n_Ответь на вопрос или напиши «пропустить» чтобы идти дальше._"
-
-                metadata = {
-                    "type": "gate_blocked",
-                    "current_question": current,
-                    "pending_questions": pending,
-                    "questions_stats": stats,
-                    "can_continue": False
-                }
-            else:
-                # All questions closed - allow next block
-                logger.info(f"[{request_id}] CHAT_PIPELINE_START type=study_next")
+            if should_skip_gate:
+                # Skip gate, get next block
+                logger.info(f"[{request_id}] CHAT_PIPELINE_START type=study_next (fresh)")
                 result = study_next(user_id)
                 logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=study_next")
                 if result.get("completed"):
@@ -406,8 +398,53 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
                         "pending_questions": result.get("pending_questions", []),
                         "current_question": result.get("current_question"),
                         "questions_stats": result.get("questions_stats", {}),
-                        "can_continue": result.get("can_continue", False)
+                        "can_continue": result.get("can_continue", False),
+                        "fallback_used": result.get("fallback_used", False)
                     }
+            else:
+                # Normal gate check: block if open questions exist
+                open_questions = get_open_questions(user_id)
+
+                if open_questions:
+                    # GATE BLOCKED - user must close questions first
+                    current = open_questions[0]
+                    stats = get_questions_stats(user_id)
+                    pending = get_pending_questions(user_id)
+
+                    logger.info(f"[{request_id}] CHAT_GATE_BLOCKED open_questions={len(open_questions)}")
+
+                    response_content = f"⚠️ **Сначала закроем вопрос:**\n\n**{current['text']}**"
+
+                    if stats["answered"] > 0 or stats["skipped"] > 0:
+                        response_content += f"\n\n✅ Закрыто: {stats['answered'] + stats['skipped']} | ⬜ Осталось: {stats['open']}"
+
+                    response_content += "\n\n_Ответь на вопрос или напиши «пропустить» чтобы идти дальше._"
+
+                    metadata = {
+                        "type": "gate_blocked",
+                        "current_question": current,
+                        "pending_questions": pending,
+                        "questions_stats": stats,
+                        "can_continue": False
+                    }
+                else:
+                    # All questions closed - allow next block
+                    logger.info(f"[{request_id}] CHAT_PIPELINE_START type=study_next")
+                    result = study_next(user_id)
+                    logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=study_next")
+                    if result.get("completed"):
+                        response_content = "🎉 Поздравляю! Ты прошёл весь курс!"
+                    else:
+                        response_content = result.get("answer", "") or result.get("content", "")
+                        metadata = {
+                            "block": result.get("block"),
+                            "progress": result.get("progress"),
+                            "sources": result.get("sources", {}),
+                            "pending_questions": result.get("pending_questions", []),
+                            "current_question": result.get("current_question"),
+                            "questions_stats": result.get("questions_stats", {}),
+                            "can_continue": result.get("can_continue", False)
+                        }
         else:
             # Process as answer to the question
             logger.info(f"[{request_id}] CHAT_PIPELINE_START type=process_user_answer")

@@ -926,6 +926,9 @@
                 messagesContainer.innerHTML = '';
                 document.getElementById('messageCount').textContent = '0 messages';
 
+                // Hide study checklist (v2.9.4 - reset clears learning state)
+                hideStudyChecklist();
+
                 // Reload status to show appropriate empty state
                 loadStatus();
 

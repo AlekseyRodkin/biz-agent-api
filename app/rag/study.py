@@ -197,7 +197,15 @@ def clear_pending_questions(user_id: str) -> None:
 # Fallback Questions (Backend-owned)
 # ============================================================================
 
-FALLBACK_QUESTIONS = [
+# Fresh start questions (first block after reset - no ROI yet)
+FRESH_START_QUESTIONS = [
+    {"id": "process", "text": "Какой процесс берём первым кандидатом на автоматизацию?"},
+    {"id": "goal", "text": "Какая цель/кратность улучшения (например, ×2 скорость или −50% ошибок)?"},
+    {"id": "owner", "text": "Кто будет владельцем этого процесса/ответственным?"}
+]
+
+# Standard questions (after user has chosen process/goal)
+STANDARD_FALLBACK_QUESTIONS = [
     {"id": "roi", "text": "Как будешь измерять ROI/эффект этого внедрения?"},
     {"id": "data", "text": "Какие данные/ресурсы нужны для реализации?"},
     {"id": "owner", "text": "Кто будет владельцем процесса/ответственным?"},
@@ -205,11 +213,22 @@ FALLBACK_QUESTIONS = [
 ]
 
 
-def generate_fallback_questions() -> list[dict]:
-    """Generate deterministic fallback questions when LLM doesn't provide them."""
+def is_fresh_start(user_id: str) -> bool:
+    """Check if user is at fresh start (no draft_decision, no previous answers)."""
+    draft = get_draft_decision(user_id)
+    return draft is None or not draft.get("answers")
+
+
+def generate_fallback_questions(fresh_start: bool = False) -> list[dict]:
+    """Generate deterministic fallback questions when LLM doesn't provide them.
+
+    Args:
+        fresh_start: If True, use process/goal questions. If False, use ROI-focused questions.
+    """
+    questions = FRESH_START_QUESTIONS if fresh_start else STANDARD_FALLBACK_QUESTIONS
     return [
         {"id": q["id"], "text": q["text"], "status": "open", "user_answer": None}
-        for q in FALLBACK_QUESTIONS
+        for q in questions
     ]
 
 
@@ -661,7 +680,8 @@ def study_next(user_id: str) -> dict:
 
     # FALLBACK: If LLM didn't provide questions, generate deterministic fallback
     if not pending:
-        pending = generate_fallback_questions()
+        fresh_start = is_fresh_start(user_id)
+        pending = generate_fallback_questions(fresh_start=fresh_start)
         fallback_used = True
 
     # Save questions with block_id

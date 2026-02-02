@@ -47,7 +47,7 @@ from app.llm.deepseek_client import LLMError
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.9.3"
+    version="2.9.4"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -909,17 +909,20 @@ async def chat_reset_endpoint(request: ChatResetRequest, _: str = Depends(requir
         else:
             raise HTTPException(status_code=400, detail="Scope must be 'current' or 'all'")
 
-        # Reset progress
+        # Reset ALL learning state (v2.9.4)
         client.table("user_progress").upsert({
             "user_id": USER_ID,
             "mode": "study",
             "current_module": 1,
             "current_day": 1,
             "current_lecture_id": None,
-            "current_sequence_order": 0
+            "current_sequence_order": 0,
+            "pending_questions": [],
+            "pending_block_id": None,
+            "draft_decision": None
         }).execute()
 
-        return {"ok": True, "scope": request.scope}
+        return {"ok": True, "scope": request.scope, "cleared": ["chat_messages", "pending_questions", "pending_block_id", "draft_decision"]}
 
     except HTTPException:
         raise
