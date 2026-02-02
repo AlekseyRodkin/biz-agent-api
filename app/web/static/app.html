@@ -367,6 +367,28 @@
 
         <!-- Input Area -->
         <div class="chat-input-area">
+            <!-- Study Mode Checklist (v2.9.2) -->
+            <div id="studyChecklist" class="mb-2 p-2 rounded" style="display: none; background: #f0f9ff; border: 1px solid #bfdbfe;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        <i class="bi bi-check-circle text-success"></i> Закрыто: <span id="checklistClosed">0</span> |
+                        <i class="bi bi-circle text-primary"></i> Осталось: <span id="checklistOpen">0</span>
+                    </small>
+                    <span id="gateStatus" class="badge bg-warning text-dark" style="display: none;">
+                        <i class="bi bi-lock"></i> Сначала ответь
+                    </span>
+                </div>
+                <div id="currentQuestionBadge" class="mt-1" style="display: none;">
+                    <span class="badge bg-primary" style="white-space: normal; text-align: left;">
+                        <i class="bi bi-question-circle me-1"></i>
+                        <span id="currentQuestionText"></span>
+                    </span>
+                    <button class="btn btn-sm btn-outline-secondary ms-1" onclick="skipCurrentQuestion()" title="Пропустить вопрос">
+                        <i class="bi bi-skip-forward"></i> Пропустить
+                    </button>
+                </div>
+            </div>
+
             <div class="quick-actions" id="quickActions">
                 <!-- Populated by JS based on mode -->
             </div>
@@ -537,6 +559,9 @@
             // Update placeholder
             document.getElementById('messageInput').placeholder = config.placeholder;
 
+            // Hide checklist when switching modes
+            hideStudyChecklist();
+
             // Load history for this mode
             loadHistory();
         }
@@ -617,6 +642,16 @@
 
             // Has messages - render normally
             messagesContainer.innerHTML = messages.map(m => renderMessage(m)).join('');
+
+            // Update checklist from last assistant message in study mode
+            if (currentMode === 'study') {
+                const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant' && m.metadata);
+                if (lastAssistant && lastAssistant.metadata) {
+                    updateStudyChecklist(lastAssistant.metadata);
+                } else {
+                    hideStudyChecklist();
+                }
+            }
 
             // Smooth autoscroll to last message
             const lastMessage = messagesContainer.querySelector('.message:last-child');
@@ -803,6 +838,11 @@
                     metadata: data.metadata,
                     created_at: new Date().toISOString()
                 });
+
+                // Update study checklist if in study mode
+                if (currentMode === 'study' && data.metadata) {
+                    updateStudyChecklist(data.metadata);
+                }
 
                 // Update message count
                 const countEl = document.getElementById('messageCount');
@@ -1085,6 +1125,69 @@
             switchMode('ask');
             document.getElementById('messageInput').value = '/daily';
             sendMessage();
+        }
+
+        // ============================================================================
+        // Study Mode Checklist (v2.9.2)
+        // ============================================================================
+        let currentQuestionId = null;
+
+        function updateStudyChecklist(metadata) {
+            const checklist = document.getElementById('studyChecklist');
+            const gateStatus = document.getElementById('gateStatus');
+            const currentBadge = document.getElementById('currentQuestionBadge');
+
+            // Only show in study mode with questions
+            if (currentMode !== 'study' || !metadata) {
+                checklist.style.display = 'none';
+                return;
+            }
+
+            const stats = metadata.questions_stats || {};
+            const current = metadata.current_question;
+            const canContinue = metadata.can_continue;
+            const pending = metadata.pending_questions || [];
+
+            // Check if there are any questions at all
+            if (!pending.length && !stats.total) {
+                checklist.style.display = 'none';
+                return;
+            }
+
+            // Update stats
+            const closed = (stats.answered || 0) + (stats.skipped || 0);
+            document.getElementById('checklistClosed').textContent = closed;
+            document.getElementById('checklistOpen').textContent = stats.open || 0;
+
+            // Gate status
+            if (canContinue === false && stats.open > 0) {
+                gateStatus.style.display = 'inline-block';
+            } else {
+                gateStatus.style.display = 'none';
+            }
+
+            // Current question
+            if (current && current.text) {
+                currentQuestionId = current.id;
+                document.getElementById('currentQuestionText').textContent = current.text;
+                currentBadge.style.display = 'block';
+            } else {
+                currentQuestionId = null;
+                currentBadge.style.display = 'none';
+            }
+
+            checklist.style.display = 'block';
+        }
+
+        function skipCurrentQuestion() {
+            if (!currentQuestionId) return;
+            document.getElementById('messageInput').value = `пропустить ${currentQuestionId}`;
+            sendMessage();
+        }
+
+        function hideStudyChecklist() {
+            document.getElementById('studyChecklist').style.display = 'none';
+            currentQuestionId = null;
         }
 
         // Initialize

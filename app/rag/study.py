@@ -14,99 +14,97 @@ STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансф
 
 ПРАВИЛА:
 - Приоритет: решения пользователя (COMPANY_MEMORY) > методология > кейсы
-- Не цитируй лекции дословно, сжато объясняй суть
+- НЕ ЦИТИРУЙ лекции дословно — кратко объясни СУТЬ
 - Если есть COMPANY_MEMORY — ссылайся на него
-- КРИТИЧЕСКИ ВАЖНО: если есть PREVIOUS_DECISIONS_TO_CHECK, ОБЯЗАТЕЛЬНО проверь их на расхождения с методологией
-- Ты НЕ ИМЕЕШЬ ПРАВА молча игнорировать потенциальные конфликты
-- Если решение противоречит методологии или пропускает обязательный шаг — укажи это
-- Не навязывай, но фиксируй риски
+- КРИТИЧЕСКИ ВАЖНО: если есть PREVIOUS_DECISIONS_TO_CHECK, проверь на расхождения
 
 КРИТИЧЕСКИЕ ЗАПРЕТЫ (MEMORY SAFETY):
 - ЗАПРЕЩЕНО: брать "решения пользователя" из METHODOLOGY_BLOCK или CASE_STUDIES
-- Секция "[ТВОИ ПРЕДЫДУЩИЕ РЕШЕНИЯ]" формируется ТОЛЬКО из COMPANY_MEMORY
-- Если COMPANY_MEMORY пустая → в секции пиши "Пока нет зафиксированных решений от тебя"
-- Если видишь в тексте "мы сделали", "наш кейс", "в нашей компании" — это НЕ решение пользователя, а пример из курса
-- Никогда не приписывай пользователю решения других студентов из транскриптов
+- Секция "[ТВОИ РЕШЕНИЯ]" формируется ТОЛЬКО из COMPANY_MEMORY
+- Если видишь "мы сделали", "наш кейс" — это НЕ решение пользователя, а пример из курса
 
-ФОРМАТ ОТВЕТА (СТРОГО!):
+ФОРМАТ ОТВЕТА — КОМПАКТНЫЙ (4-6 строк суть + 1 вопрос):
 
-[СУТЬ]
-- 3–7 пунктов, что важно понять из этого блока
+**Суть блока:** [3-4 предложения — главная идея]
 
-[КАК ЭТО ДЕЛАЮТ ПО МЕТОДОЛОГИИ]
-- кратко, по шагам
+**Вопрос:** [ОДИН конкретный вопрос — самый важный первый]
 
-[ПРИМЕРЫ]
-- 1–2 кейса (если есть в CASE_STUDIES)
+---
+<details><summary>Подробнее</summary>
 
-[ТВОИ ПРЕДЫДУЩИЕ РЕШЕНИЯ]
-- если есть COMPANY_MEMORY, покажи как это связано
+[Если есть COMPANY_MEMORY — как это связано]
+[Если есть CASE_STUDIES — 1 пример]
+[Если есть расхождения — укажи риск]
 
-[ВОЗМОЖНЫЕ РАСХОЖДЕНИЯ]
-(Обязательно добавь этот раздел, если есть PREVIOUS_DECISIONS_TO_CHECK и обнаружены расхождения!)
-- По методологии: что говорит текущий блок
-- У тебя принято: что пользователь решил ранее
-- Риск: почему это может быть проблемой
-(Если расхождений нет — напиши "Расхождений не обнаружено")
+SOURCES_USED: [chunk_ids]
+</details>
 
-[ВОПРОСЫ К ТЕБЕ]
-Задай 2-3 конкретных вопроса, требующих ответа от пользователя.
-Каждый вопрос должен помогать пользователю принять решение для своей компании.
-
-[СЛЕДУЮЩИЙ ШАГ]
-Что нужно сделать/описать до следующего блока
-
-SOURCES_USED: [список chunk_id]
-
-В самом конце ответа ОБЯЗАТЕЛЬНО добавь структурированный блок вопросов:
+ВАЖНО:
+- НЕ ПЕЧАТАЙ ВСЕ ВОПРОСЫ В ТЕКСТЕ — храни их в <pending_questions>, показывай ОДИН
+- Первый вопрос обычно про ROI/метрику (как измерить эффект)
+- Второй — про данные/ресурсы (что нужно)
+- Третий — про владельца/ответственного (кто делает)
 
 <pending_questions>
 [
-  {"id": "q1", "text": "Первый конкретный вопрос?"},
-  {"id": "q2", "text": "Второй конкретный вопрос?"}
+  {"id": "roi", "text": "Как будешь измерять ROI/эффект этого внедрения?"},
+  {"id": "data", "text": "Какие данные/ресурсы нужны?"},
+  {"id": "owner", "text": "Кто будет владельцем процесса?"}
 ]
 </pending_questions>
 
-Максимум 3 вопроса. Каждый вопрос должен требовать конкретного ответа.
+Максимум 3 вопроса. ID должны быть осмысленные: roi, data, owner, timeline, budget и т.д.
 """
 
 ANSWER_SYSTEM_PROMPT = """Ты — обучающий AI-агент. Пользователь ответил на вопрос о решении для своей компании.
 
 Твоя задача:
-1. Подтвердить решение или предложить уточнения
-2. Если решение конкретное — сформировать запись для памяти
-3. Проанализировать, на какие вопросы из PENDING_QUESTIONS пользователь ответил
+1. Кратко подтвердить ответ (1-2 предложения)
+2. Проанализировать, на какие вопросы из PENDING_QUESTIONS пользователь РЕАЛЬНО ответил
+3. Если ответ конкретный — сохранить в draft (НЕ в memory!)
 
-Если пользователь дал конкретное решение, ДОБАВЬ:
+ПРАВИЛА ПРОВЕРКИ ОТВЕТОВ (СТРОГО!):
 
-<memory_write>
+ROI/метрика считается ОТВЕЧЕННОЙ только если:
+- Есть формула расчёта ("ROI = (выгода - затраты) / затраты")
+- ИЛИ есть конкретные ЧИСЛА ("экономия 3.5ч * 1000₽/час = 3500₽/день")
+- ИЛИ явный skip ("пропустить ROI", "не знаю пока", "позже")
+
+Если в ответе нет чисел/формул для ROI-вопроса → ROI остаётся OPEN!
+
+Другие вопросы (data, owner, timeline):
+- Ответ конкретный = closed
+- Ответ общий/уклончивый = остаётся open
+
+НЕ СОХРАНЯЙ В MEMORY сразу! Только формируй draft ответа:
+
+<draft_answer>
 {
-  "memory_type": "decision",
-  "related_module": <number>,
-  "related_day": <number>,
-  "related_lecture_id": "<string>",
-  "related_topic": "<string>",
-  "question_asked": "<вопрос, на который ответил пользователь>",
-  "user_decision_raw": "<точный текст пользователя>",
-  "user_decision_normalized": "<нормализованное решение 1-2 предложения>"
+  "question_id": "<id вопроса на который ответил>",
+  "answer_text": "<текст ответа пользователя>",
+  "is_concrete": true/false
 }
-</memory_write>
+</draft_answer>
 
-ОБЯЗАТЕЛЬНО в конце ответа добавь анализ вопросов:
+ОБЯЗАТЕЛЬНО в конце ответа — строгий анализ:
 
 <questions_analysis>
 {
-  "answered": ["q1"],
-  "remaining": ["q2", "q3"],
-  "all_answered": false
+  "answered": ["data", "owner"],
+  "skipped": [],
+  "still_open": ["roi"],
+  "roi_has_numbers": false,
+  "all_closed": false
 }
 </questions_analysis>
 
-- "answered" — ID вопросов, на которые пользователь дал конкретный ответ
-- "remaining" — ID вопросов, оставшихся без ответа
-- "all_answered" — true если все вопросы закрыты
+- "answered" — ID вопросов с конкретным ответом
+- "skipped" — ID вопросов, которые пользователь явно пропустил
+- "still_open" — ID вопросов БЕЗ ответа
+- "roi_has_numbers" — true если в ответе на ROI есть цифры/формула
+- "all_closed" — true ТОЛЬКО если answered + skipped = все вопросы
 
-Если PENDING_QUESTIONS пустой — ставь all_answered: true и пустые массивы.
+Если PENDING_QUESTIONS пустой — ставь all_closed: true.
 """
 
 
@@ -122,15 +120,19 @@ def get_user_progress(user_id: str) -> dict | None:
 # ============================================================================
 
 def parse_pending_questions(text: str) -> list[dict]:
-    """Parse <pending_questions> block. Returns [] on any error (never blocks learning)."""
+    """Parse <pending_questions> block. Returns [] on any error (never blocks learning).
+
+    New structure: {"id": "roi", "text": "...", "status": "open", "user_answer": null}
+    Status: open | answered | skipped
+    """
     try:
         match = re.search(r'<pending_questions>\s*(\[.*?\])\s*</pending_questions>', text, re.DOTALL)
         if not match:
             return []  # No block = no questions (OK)
         questions = json.loads(match.group(1))
-        # Validate structure and add answered=False
+        # Validate structure and add status="open"
         return [
-            {"id": q["id"], "text": q["text"], "answered": False}
+            {"id": q["id"], "text": q["text"], "status": "open", "user_answer": None}
             for q in questions
             if isinstance(q, dict) and "id" in q and "text" in q
         ]
@@ -166,18 +168,20 @@ def get_pending_questions(user_id: str) -> list[dict]:
     return []
 
 
-def mark_questions_answered(user_id: str, answered_ids: list[str]) -> list[dict]:
-    """Mark specific questions as answered. Returns remaining unanswered."""
+def mark_questions_answered(user_id: str, answered_ids: list[str], user_answer: str = None) -> list[dict]:
+    """Mark specific questions as answered. Returns remaining open questions."""
     questions = get_pending_questions(user_id)
     for q in questions:
         if q["id"] in answered_ids:
-            q["answered"] = True
+            q["status"] = "answered"
+            if user_answer:
+                q["user_answer"] = user_answer
 
     # Save updated questions
     save_pending_questions(user_id, questions)
 
-    # Return unanswered
-    return [q for q in questions if not q.get("answered", False)]
+    # Return open questions
+    return [q for q in questions if q.get("status") == "open"]
 
 
 def clear_pending_questions(user_id: str) -> None:
@@ -187,8 +191,8 @@ def clear_pending_questions(user_id: str) -> None:
 
 def skip_question(user_id: str, query: str) -> tuple[list[dict], list[str]]:
     """
-    Skip question(s) by ID or partial text match.
-    Returns (remaining_questions, skipped_texts).
+    Skip question(s) by ID or partial text match. Sets status to 'skipped'.
+    Returns (remaining_open_questions, skipped_texts).
     """
     questions = get_pending_questions(user_id)
     skipped_ids = []
@@ -197,16 +201,152 @@ def skip_question(user_id: str, query: str) -> tuple[list[dict], list[str]]:
     query_lower = query.lower().strip()
 
     for q in questions:
-        # Match by ID (e.g., "q1") or by partial text
+        if q.get("status") != "open":
+            continue  # Skip already closed questions
+        # Match by ID (e.g., "roi") or by partial text
         if q["id"].lower() == query_lower or query_lower in q["text"].lower():
             skipped_ids.append(q["id"])
             skipped_texts.append(q["text"])
 
     if skipped_ids:
-        remaining = mark_questions_answered(user_id, skipped_ids)
-        return remaining, skipped_texts
+        for q in questions:
+            if q["id"] in skipped_ids:
+                q["status"] = "skipped"
+        save_pending_questions(user_id, questions)
 
-    return [q for q in questions if not q.get("answered", False)], []
+    return [q for q in questions if q.get("status") == "open"], skipped_texts
+
+
+def get_open_questions(user_id: str) -> list[dict]:
+    """Get questions with status='open'."""
+    questions = get_pending_questions(user_id)
+    return [q for q in questions if q.get("status") == "open"]
+
+
+def get_current_question(user_id: str) -> dict | None:
+    """Get first open question (the one to show in UI)."""
+    open_qs = get_open_questions(user_id)
+    return open_qs[0] if open_qs else None
+
+
+def all_questions_closed(user_id: str) -> bool:
+    """Check if all questions are answered or skipped (no open)."""
+    questions = get_pending_questions(user_id)
+    if not questions:
+        return True  # No questions = closed
+    return all(q.get("status") in ("answered", "skipped") for q in questions)
+
+
+def get_questions_stats(user_id: str) -> dict:
+    """Get question statistics for UI."""
+    questions = get_pending_questions(user_id)
+    return {
+        "total": len(questions),
+        "answered": len([q for q in questions if q.get("status") == "answered"]),
+        "skipped": len([q for q in questions if q.get("status") == "skipped"]),
+        "open": len([q for q in questions if q.get("status") == "open"])
+    }
+
+
+# ============================================================================
+# ROI Validation
+# ============================================================================
+
+def analyze_roi_answer(user_answer: str) -> bool:
+    """Check if answer contains ROI/metric calculation signals (numbers, formulas)."""
+    roi_signals = [
+        r'\d+\s*(₽|руб|рублей|р\.|р\b)',  # Currency
+        r'\d+\s*(час|ч\.|ч\b|часов|минут|мин)',  # Time
+        r'\d+\s*(%|процент)',  # Percentage
+        r'\d+\s*(день|дн|дней|недел|месяц|мес|год|лет)',  # Duration
+        r'ROI\s*[=:]',  # ROI formula
+        r'экономи[яю]|сэконом',  # Economy
+        r'выгод[аы]',  # Benefit
+        r'окупа',  # Payback
+        r'\d+[.,]\d+',  # Decimal numbers
+        r'\d+\s*[*×x]\s*\d+',  # Multiplication
+    ]
+    return any(re.search(pattern, user_answer, re.IGNORECASE) for pattern in roi_signals)
+
+
+# ============================================================================
+# Draft/Commit for Decisions
+# ============================================================================
+
+def get_draft_decision(user_id: str) -> dict | None:
+    """Get current draft decision if exists."""
+    client = get_client()
+    result = client.table("user_progress").select("draft_decision").eq("user_id", user_id).execute()
+    if result.data and result.data[0].get("draft_decision"):
+        return result.data[0]["draft_decision"]
+    return None
+
+
+def save_draft_answer(user_id: str, question_id: str, answer_text: str, topic: str = None) -> None:
+    """Save answer to draft (not yet committed to company_memory)."""
+    from datetime import datetime
+
+    draft = get_draft_decision(user_id)
+    if not draft:
+        draft = {
+            "topic": topic or "Study decision",
+            "answers": [],
+            "started_at": datetime.utcnow().isoformat()
+        }
+
+    # Update or add answer
+    found = False
+    for a in draft["answers"]:
+        if a["question_id"] == question_id:
+            a["answer"] = answer_text
+            found = True
+            break
+    if not found:
+        draft["answers"].append({"question_id": question_id, "answer": answer_text})
+
+    # Save draft
+    client = get_client()
+    client.table("user_progress").update({"draft_decision": draft}).eq("user_id", user_id).execute()
+
+
+def commit_decision(user_id: str) -> dict | None:
+    """Commit draft to company_memory when all questions closed. Returns saved decision."""
+    draft = get_draft_decision(user_id)
+    if not draft or not draft.get("answers"):
+        return None
+
+    progress = get_user_progress(user_id)
+    lecture_id = progress.get("current_lecture_id", "") if progress else ""
+    module = progress.get("current_module", 1) if progress else 1
+    day = progress.get("current_day", 1) if progress else 1
+
+    # Build combined decision text
+    answers_text = "\n".join([f"- {a['question_id']}: {a['answer']}" for a in draft["answers"]])
+    normalized = f"[{draft['topic']}] {'; '.join([a['answer'][:100] for a in draft['answers'][:3]])}"
+
+    # Save to company_memory
+    memory_data = {
+        "memory_type": "decision",
+        "related_module": module,
+        "related_day": day,
+        "related_lecture_id": lecture_id,
+        "related_topic": draft["topic"],
+        "question_asked": "Study block questions",
+        "user_decision_raw": answers_text,
+        "user_decision_normalized": normalized[:500]
+    }
+
+    memory_id = save_memory(user_id, memory_data)
+
+    # Clear draft
+    client = get_client()
+    client.table("user_progress").update({"draft_decision": None}).eq("user_id", user_id).execute()
+
+    return {
+        "memory_id": memory_id,
+        "topic": draft["topic"],
+        "summary": normalized[:100]
+    }
 
 
 def reset_progress(user_id: str) -> dict:
@@ -473,6 +613,10 @@ def study_next(user_id: str) -> dict:
     if navigation:
         clean_answer = f"{clean_answer}\n\n{navigation}"
 
+    # Get current question and stats for UI
+    current_question = get_current_question(user_id)
+    stats = get_questions_stats(user_id)
+
     return {
         "answer": clean_answer,
         "sources": {
@@ -483,7 +627,10 @@ def study_next(user_id: str) -> dict:
         },
         "progress": get_user_progress(user_id),
         "completed": False,
-        "pending_questions": pending
+        "pending_questions": pending,
+        "current_question": current_question,
+        "questions_stats": stats,
+        "can_continue": False  # Just loaded new block, need to answer questions first
     }
 
 
@@ -525,8 +672,19 @@ def save_memory(user_id: str, memory_data: dict) -> str:
     return result.data[0]["id"] if result.data else None
 
 
+def parse_draft_answer(text: str) -> dict | None:
+    """Parse <draft_answer> block from LLM response."""
+    try:
+        match = re.search(r'<draft_answer>\s*({.*?})\s*</draft_answer>', text, re.DOTALL)
+        if not match:
+            return None
+        return json.loads(match.group(1))
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
 def process_user_answer(user_id: str, answer: str, context: dict) -> dict:
-    """Process user answer and potentially save to memory."""
+    """Process user answer with draft/commit pattern. Only commits when all questions closed."""
     progress = get_user_progress(user_id)
 
     # Get current lecture info for context
@@ -560,49 +718,75 @@ def process_user_answer(user_id: str, answer: str, context: dict) -> dict:
 
     response = chat_completion(messages)
 
-    # Parse and save memory if present
-    memory_data = parse_memory_write(response)
+    # Parse questions analysis
+    analysis = parse_questions_analysis(response)
+    memory_saved = False
     memory_id = None
     decision_summary = None
 
-    if memory_data:
-        # Add lecture context if not present
-        if not memory_data.get("related_lecture_id"):
-            memory_data["related_lecture_id"] = lecture_id
-        if not memory_data.get("related_module"):
-            memory_data["related_module"] = module
-        if not memory_data.get("related_day"):
-            memory_data["related_day"] = day
-
-        memory_id = save_memory(user_id, memory_data)
-        decision_summary = (memory_data.get("user_decision_normalized") or "")[:100]
-
-    # Parse questions analysis and mark answered
-    analysis = parse_questions_analysis(response)
-    remaining = []
-
     if analysis:
         answered_ids = analysis.get("answered", [])
+        skipped_ids = analysis.get("skipped", [])
+        still_open = analysis.get("still_open", [])
+
+        # Extra ROI validation: if ROI question answered, check for numbers
+        for qid in answered_ids:
+            if "roi" in qid.lower():
+                if not analyze_roi_answer(answer):
+                    # ROI answer without numbers - keep it open
+                    answered_ids = [x for x in answered_ids if x != qid]
+                    still_open.append(qid)
+
+        # Mark answered questions
         if answered_ids:
-            remaining = mark_questions_answered(user_id, answered_ids)
-    else:
-        # If no analysis, keep current pending questions
-        remaining = [q for q in pending if not q.get("answered", False)]
+            for qid in answered_ids:
+                # Save answer to draft
+                save_draft_answer(user_id, qid, answer[:500], context.get('topic', 'Study'))
+            mark_questions_answered(user_id, answered_ids, answer[:500])
+
+        # Mark skipped questions
+        if skipped_ids:
+            questions = get_pending_questions(user_id)
+            for q in questions:
+                if q["id"] in skipped_ids:
+                    q["status"] = "skipped"
+            save_pending_questions(user_id, questions)
+
+    # Check if all questions are now closed
+    all_closed = all_questions_closed(user_id)
+
+    if all_closed and get_draft_decision(user_id):
+        # COMMIT: save draft to company_memory
+        commit_result = commit_decision(user_id)
+        if commit_result:
+            memory_saved = True
+            memory_id = commit_result.get("memory_id")
+            decision_summary = commit_result.get("summary")
+
+    # Get remaining open questions for response
+    remaining = get_open_questions(user_id)
+    current_question = get_current_question(user_id)
+    stats = get_questions_stats(user_id)
 
     # Remove XML blocks from visible response
-    clean_response = re.sub(r'<memory_write>.*?</memory_write>', '', response, flags=re.DOTALL)
+    clean_response = re.sub(r'<draft_answer>.*?</draft_answer>', '', response, flags=re.DOTALL)
     clean_response = re.sub(r'<questions_analysis>.*?</questions_analysis>', '', clean_response, flags=re.DOTALL).strip()
 
-    # Add remaining questions hint if any
-    if remaining:
-        remaining_texts = [q["text"] for q in remaining]
-        clean_response += f"\n\n**Осталось ответить:** {'; '.join(remaining_texts)}"
+    # Add status to response
+    if memory_saved:
+        clean_response += f"\n\n✅ **Сохранено в Мои решения:** {decision_summary}"
+    elif remaining:
+        # Show next question
+        clean_response += f"\n\n**Следующий вопрос:** {current_question['text']}" if current_question else ""
 
     return {
         "answer": clean_response,
-        "memory_saved": memory_id is not None,
+        "memory_saved": memory_saved,
         "memory_id": memory_id,
         "decision_summary": decision_summary,
-        "pending_questions": remaining,
-        "all_answered": len(remaining) == 0
+        "pending_questions": get_pending_questions(user_id),  # Full list with statuses
+        "current_question": current_question,
+        "questions_stats": stats,
+        "all_closed": all_closed,
+        "can_continue": all_closed
     }
