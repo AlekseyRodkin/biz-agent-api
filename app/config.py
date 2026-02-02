@@ -22,3 +22,6 @@ SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
 
 # Content cleaning
 USE_CLEAN_CONTENT = os.getenv("USE_CLEAN_CONTENT", "false").lower() == "true"
+
+# Study mode: force fallback questions (for testing gate logic without LLM XML)
+FORCE_FALLBACK_QUESTIONS = os.getenv("FORCE_FALLBACK_QUESTIONS", "false").lower() == "true"

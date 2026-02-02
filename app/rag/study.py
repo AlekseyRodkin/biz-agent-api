@@ -4,7 +4,7 @@ import re
 from app.db.supabase_client import get_client
 from app.embeddings.embedder import embed_query
 from app.llm.deepseek_client import chat_completion
-from app.config import USER_ID, USE_CLEAN_CONTENT
+from app.config import USER_ID, USE_CLEAN_CONTENT, FORCE_FALLBACK_QUESTIONS
 from app.rag.decisions import detect_conflicts, build_conflict_context
 from app.rag.course_map import build_navigation_block
 
@@ -185,8 +185,62 @@ def mark_questions_answered(user_id: str, answered_ids: list[str], user_answer: 
 
 
 def clear_pending_questions(user_id: str) -> None:
-    """Clear all pending questions (when moving to next block)."""
-    save_pending_questions(user_id, [])
+    """Clear all pending questions and block_id (when moving to next block)."""
+    client = get_client()
+    client.table("user_progress").update({
+        "pending_questions": [],
+        "pending_block_id": None
+    }).eq("user_id", user_id).execute()
+
+
+# ============================================================================
+# Fallback Questions (Backend-owned)
+# ============================================================================
+
+FALLBACK_QUESTIONS = [
+    {"id": "roi", "text": "Как будешь измерять ROI/эффект этого внедрения?"},
+    {"id": "data", "text": "Какие данные/ресурсы нужны для реализации?"},
+    {"id": "owner", "text": "Кто будет владельцем процесса/ответственным?"},
+    {"id": "next_step", "text": "Какой первый конкретный шаг на ближайшие 48 часов?"}
+]
+
+
+def generate_fallback_questions() -> list[dict]:
+    """Generate deterministic fallback questions when LLM doesn't provide them."""
+    return [
+        {"id": q["id"], "text": q["text"], "status": "open", "user_answer": None}
+        for q in FALLBACK_QUESTIONS
+    ]
+
+
+def get_pending_block_id(user_id: str) -> str | None:
+    """Get current pending_block_id to check if questions belong to current block."""
+    client = get_client()
+    result = client.table("user_progress").select("pending_block_id").eq("user_id", user_id).execute()
+    if result.data and result.data[0].get("pending_block_id"):
+        return result.data[0]["pending_block_id"]
+    return None
+
+
+def save_pending_questions_with_block(user_id: str, questions: list[dict], block_id: str) -> None:
+    """Save pending questions along with block_id to track which block they belong to."""
+    client = get_client()
+    client.table("user_progress").update({
+        "pending_questions": questions,
+        "pending_block_id": block_id
+    }).eq("user_id", user_id).execute()
+
+
+def compute_block_id(chunks: list[dict]) -> str:
+    """Compute a unique block_id from chunks (lecture_id + sequence range)."""
+    if not chunks:
+        return "unknown"
+    first = chunks[0]
+    last = chunks[-1]
+    lecture_id = first.get("lecture_id", "unknown")
+    seq_start = first.get("sequence_order", 0)
+    seq_end = last.get("sequence_order", 0)
+    return f"{lecture_id}:{seq_start}-{seq_end}"
 
 
 def skip_question(user_id: str, query: str) -> tuple[list[dict], list[str]]:
@@ -596,10 +650,22 @@ def study_next(user_id: str) -> dict:
 
     answer = chat_completion(messages)
 
-    # Parse and save pending questions (with fallback - never blocks learning)
-    pending = parse_pending_questions(answer)
-    if pending:
-        save_pending_questions(user_id, pending)
+    # Compute block_id for tracking
+    block_id = compute_block_id(chunks)
+
+    # Parse pending questions from LLM response
+    pending = []
+    fallback_used = False
+    if not FORCE_FALLBACK_QUESTIONS:
+        pending = parse_pending_questions(answer)
+
+    # FALLBACK: If LLM didn't provide questions, generate deterministic fallback
+    if not pending:
+        pending = generate_fallback_questions()
+        fallback_used = True
+
+    # Save questions with block_id
+    save_pending_questions_with_block(user_id, pending, block_id)
 
     # Remove <pending_questions> block from visible response
     clean_answer = re.sub(r'<pending_questions>.*?</pending_questions>', '', answer, flags=re.DOTALL).strip()
@@ -630,7 +696,9 @@ def study_next(user_id: str) -> dict:
         "pending_questions": pending,
         "current_question": current_question,
         "questions_stats": stats,
-        "can_continue": False  # Just loaded new block, need to answer questions first
+        "can_continue": False,  # Just loaded new block, need to answer questions first
+        "fallback_used": fallback_used,
+        "block_id": block_id
     }
 
 
