@@ -237,6 +237,10 @@
             <a class="nav-link" href="/ritual/weekly" target="_blank">
                 <i class="bi bi-calendar-week"></i> Weekly Review
             </a>
+            <a class="nav-link" href="#" onclick="showDecisionsPanel(); return false;">
+                <i class="bi bi-journal-check"></i> Мои решения
+                <span class="badge bg-info ms-1" id="decisionsCount">0</span>
+            </a>
         </nav>
 
         <div class="mb-3 mt-4">
@@ -297,8 +301,8 @@
                 <p class="text-muted mt-2">Загрузка...</p>
             </div>
 
-            <!-- Welcome State (shown when no history) -->
-            <div id="welcomeState" style="display: none;">
+            <!-- First Visit Welcome (shown only once) -->
+            <div id="firstVisitWelcome" style="display: none;">
                 <div class="welcome-screen">
                     <h2>Добро пожаловать!</h2>
                     <p>Я помогу освоить методологию внедрения AI в бизнес и создать план для твоей компании.</p>
@@ -317,6 +321,43 @@
                         <i class="bi bi-calendar-check"></i> Показать фокус дня
                         <small>Посмотреть задачи и приоритеты на сегодня</small>
                     </button>
+                </div>
+            </div>
+
+            <!-- Ask Mode Empty State -->
+            <div id="askEmptyState" style="display: none;">
+                <div class="text-center py-5">
+                    <i class="bi bi-chat-dots" style="font-size: 3rem; color: #6c757d;"></i>
+                    <h5 class="mt-3">Задай вопрос по AI</h5>
+                    <p class="text-muted">Примеры:</p>
+                    <div class="d-flex flex-wrap justify-content-center gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('Как рассчитать ROI от внедрения AI?')">
+                            ROI от AI
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('Какие процессы автоматизировать первыми?')">
+                            С чего начать
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('Как убедить руководство?')">
+                            Аргументы для CEO
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Architect Mode Empty State -->
+            <div id="architectEmptyState" style="display: none;">
+                <div class="text-center py-5">
+                    <i class="bi bi-diagram-3" style="font-size: 3rem; color: #6c757d;"></i>
+                    <h5 class="mt-3">Создай план внедрения</h5>
+                    <p class="text-muted">Опиши цель, и я создам структурированный план.</p>
+                    <div class="d-flex flex-wrap justify-content-center gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('Автоматизировать обработку заявок')">
+                            Автоматизация заявок
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="sendQuickAction('Внедрить AI в отдел продаж')">
+                            AI для продаж
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -395,9 +436,29 @@
         </div>
     </div>
 
+    <!-- Decisions Modal -->
+    <div class="modal fade" id="decisionsModal" tabindex="-1" aria-labelledby="decisionsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="decisionsModalLabel">
+                        <i class="bi bi-journal-check"></i> Мои решения
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="decisionsContent">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentMode = 'study';
+        let seenWelcome = false;
         const modeConfig = {
             study: {
                 title: 'Study Mode',
@@ -526,21 +587,35 @@
 
         function renderMessages(messages) {
             const loadingState = document.getElementById('loadingState');
-            const welcomeState = document.getElementById('welcomeState');
+            const firstVisitWelcome = document.getElementById('firstVisitWelcome');
+            const askEmptyState = document.getElementById('askEmptyState');
+            const architectEmptyState = document.getElementById('architectEmptyState');
             const messagesContainer = document.getElementById('messagesContainer');
 
-            // Hide loading
+            // Hide all states
             loadingState.style.display = 'none';
+            firstVisitWelcome.style.display = 'none';
+            askEmptyState.style.display = 'none';
+            architectEmptyState.style.display = 'none';
 
             if (messages.length === 0) {
-                // Show welcome, hide messages
-                welcomeState.style.display = 'block';
+                // Decide what to show based on seenWelcome flag and mode
+                if (!seenWelcome) {
+                    // True first visit - show full welcome with 3 buttons
+                    firstVisitWelcome.style.display = 'block';
+                } else if (currentMode === 'ask') {
+                    // Ask mode empty - show examples
+                    askEmptyState.style.display = 'block';
+                } else if (currentMode === 'architect') {
+                    // Architect mode empty - show examples
+                    architectEmptyState.style.display = 'block';
+                }
+                // Study mode: ensure_study_welcome handles it (backend creates welcome message)
                 messagesContainer.innerHTML = '';
                 return;
             }
 
-            // Hide welcome, show messages
-            welcomeState.style.display = 'none';
+            // Has messages - render normally
             messagesContainer.innerHTML = messages.map(m => renderMessage(m)).join('');
 
             // Smooth autoscroll to last message
@@ -588,9 +663,25 @@
             // Use markdown rendering for assistant messages, plain escape for user
             const contentHtml = msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content);
 
+            // Decision saved badge
+            let decisionBadge = '';
+            if (msg.metadata?.decision_saved) {
+                const summary = msg.metadata.decision_summary || 'решение';
+                decisionBadge = `
+                    <div class="mt-2">
+                        <span class="badge bg-success">
+                            <i class="bi bi-check-circle"></i> Сохранено: ${escapeHtml(summary.substring(0, 50))}${summary.length > 50 ? '...' : ''}
+                        </span>
+                    </div>
+                `;
+                // Reload decisions count after showing badge
+                loadDecisionsCount();
+            }
+
             return `
                 <div class="message ${msg.role}">
                     <div class="message-content">${contentHtml}</div>
+                    ${decisionBadge}
                     <div class="message-meta">${time}${sourcesHtml}</div>
                 </div>
             `;
@@ -905,6 +996,9 @@
                 const response = await fetchWithAuth('/chat/status');
                 const data = await response.json();
 
+                // Track seen_welcome flag
+                seenWelcome = data.seen_welcome === true;
+
                 // Update sidebar status
                 if (data.sidebar) {
                     updateSidebarStatus(data.sidebar);
@@ -914,14 +1008,71 @@
             }
         }
 
+        async function markWelcomeSeen() {
+            try {
+                await fetchWithAuth('/welcome/seen', { method: 'POST' });
+                seenWelcome = true;
+            } catch (error) {
+                console.error('Failed to mark welcome seen:', error);
+            }
+        }
+
+        async function showDecisionsPanel() {
+            const modal = new bootstrap.Modal(document.getElementById('decisionsModal'));
+            const content = document.getElementById('decisionsContent');
+            content.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary"></div></div>';
+            modal.show();
+
+            try {
+                const response = await fetchWithAuth('/me/decisions');
+                const data = await response.json();
+
+                if (!data.decisions || data.decisions.length === 0) {
+                    content.innerHTML = '<p class="text-muted text-center py-4">Пока нет сохранённых решений.</p>';
+                    return;
+                }
+
+                let html = '<div class="list-group list-group-flush">';
+                for (const d of data.decisions) {
+                    const date = new Date(d.created_at).toLocaleDateString('ru-RU');
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <strong>${escapeHtml(d.topic)}</strong>
+                                <small class="text-muted">${date}</small>
+                            </div>
+                            <p class="mb-1 mt-1 text-secondary">${escapeHtml(d.decision)}</p>
+                            <small class="text-muted">Модуль ${d.module || '?'}</small>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+                content.innerHTML = html;
+            } catch (error) {
+                content.innerHTML = `<p class="text-danger text-center">Ошибка загрузки: ${error.message}</p>`;
+            }
+        }
+
+        async function loadDecisionsCount() {
+            try {
+                const response = await fetchWithAuth('/me/decisions');
+                const data = await response.json();
+                document.getElementById('decisionsCount').textContent = data.total || 0;
+            } catch (e) {
+                // Ignore
+            }
+        }
+
         // Welcome screen actions
-        function startLearning() {
+        async function startLearning() {
+            await markWelcomeSeen();
             switchMode('study');
             document.getElementById('messageInput').value = 'Поехали!';
             sendMessage();
         }
 
-        function startArchitect() {
+        async function startArchitect() {
+            await markWelcomeSeen();
             switchMode('architect');
             const input = document.getElementById('messageInput');
             input.focus();
@@ -929,18 +1080,22 @@
         }
 
         async function showDailyFocus() {
+            await markWelcomeSeen();
             switchMode('ask');
             document.getElementById('messageInput').value = '/daily';
             sendMessage();
         }
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load status first to get seen_welcome flag
+            await loadStatus();
+            loadDecisionsCount();
+
             // Load saved mode from localStorage or default to 'study'
             const savedMode = localStorage.getItem('chatMode');
             const initialMode = savedMode && modeConfig[savedMode] ? savedMode : 'study';
             switchMode(initialMode);
-            loadStatus();
         });
     </script>
 </body>

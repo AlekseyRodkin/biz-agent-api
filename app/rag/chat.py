@@ -7,7 +7,10 @@ from app.db.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 from app.rag.ask import ask as rag_ask
-from app.rag.study import study_next, process_user_answer, reset_progress, get_user_progress
+from app.rag.study import (
+    study_next, process_user_answer, reset_progress, get_user_progress,
+    skip_question, get_pending_questions
+)
 from app.rag.architect_session import architect_session
 from app.rag.rituals import daily_focus, weekly_review
 from app.rag.module_review import module_review
@@ -63,6 +66,38 @@ def save_message(user_id: str, mode: str, role: str, content: str, metadata: dic
     if result.data:
         return result.data[0]["id"]
     return None
+
+
+# ============================================================================
+# Welcome State Management
+# ============================================================================
+
+def has_seen_welcome(user_id: str) -> bool:
+    """Check if user has already seen welcome screen."""
+    client = get_client()
+    result = client.table("user_progress").select("seen_welcome").eq("user_id", user_id).execute()
+    if result.data and result.data[0].get("seen_welcome"):
+        return True
+    return False
+
+
+def mark_welcome_seen(user_id: str) -> None:
+    """Mark that user has seen welcome screen."""
+    client = get_client()
+    # Ensure user_progress record exists
+    existing = client.table("user_progress").select("user_id").eq("user_id", user_id).execute()
+    if existing.data:
+        client.table("user_progress").update({"seen_welcome": True}).eq("user_id", user_id).execute()
+    else:
+        # Create new progress record with seen_welcome=True
+        client.table("user_progress").insert({
+            "user_id": user_id,
+            "mode": "study",
+            "current_module": 1,
+            "current_day": 1,
+            "current_sequence_order": 0,
+            "seen_welcome": True
+        }).execute()
 
 
 def get_history(user_id: str, mode: str = None, limit: int = 50) -> list:
@@ -258,6 +293,43 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
         # Regular text = continue learning (no /next required)
         msg_lower = message.lower().strip()
 
+        # Handle skip command (/skip q1, пропустить ROI, skip q2)
+        skip_query = None
+        if message.startswith("/skip "):
+            skip_query = message[6:].strip()
+        elif msg_lower.startswith("пропустить "):
+            skip_query = message[len("пропустить "):].strip()
+        elif msg_lower.startswith("skip "):
+            skip_query = message[5:].strip()
+
+        if skip_query:
+            logger.info(f"[{request_id}] CHAT_PIPELINE_START type=skip_question query={skip_query}")
+            remaining, skipped_texts = skip_question(user_id, skip_query)
+            logger.info(f"[{request_id}] CHAT_PIPELINE_DONE type=skip_question skipped={len(skipped_texts)}")
+
+            if skipped_texts:
+                response_content = f"⏭️ Пропущено: {'; '.join(skipped_texts)}"
+                if remaining:
+                    remaining_texts = [q["text"] for q in remaining]
+                    response_content += f"\n\n**Осталось ответить:** {'; '.join(remaining_texts)}"
+                else:
+                    response_content += "\n\n✅ Все вопросы закрыты. Напиши «Дальше» для следующего блока."
+            else:
+                response_content = f"❌ Не нашёл вопрос «{skip_query}» среди ожидающих."
+                pending = get_pending_questions(user_id)
+                if pending:
+                    pending_texts = [f"{q['id']}: {q['text']}" for q in pending]
+                    response_content += f"\n\nОжидающие вопросы:\n" + "\n".join(f"- {t}" for t in pending_texts)
+
+            metadata = {"type": "skip", "skipped": skipped_texts, "remaining": [q["text"] for q in remaining]}
+            save_message(user_id, mode, "assistant", response_content, metadata)
+            return {
+                "role": "assistant",
+                "content": response_content,
+                "metadata": metadata,
+                "mode": mode
+            }
+
         # Patterns that mean "continue" / "yes, let's go"
         continue_patterns = [
             "next", "далее", "дальше", "следующий",
@@ -289,7 +361,8 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
                 metadata = {
                     "block": result.get("block"),
                     "progress": result.get("progress"),
-                    "sources": result.get("sources", {})
+                    "sources": result.get("sources", {}),
+                    "pending_questions": result.get("pending_questions", [])
                 }
         else:
             # Process as answer to the question
@@ -304,11 +377,16 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
             response_content = result.get("answer", "") or result.get("response", "")
             metadata = {
                 "decision_saved": result.get("memory_saved", False),
-                "decision_id": result.get("memory_id")
+                "decision_id": result.get("memory_id"),
+                "decision_summary": result.get("decision_summary"),
+                "pending_questions": result.get("pending_questions", []),
+                "all_answered": result.get("all_answered", True)
             }
-            # After processing answer, auto-continue to next block
+            # After processing answer, guide user based on remaining questions
             if response_content:
-                response_content += "\n\n---\n\n**Отлично!** Напиши «Дальше» когда будешь готов к следующему блоку."
+                if result.get("all_answered", True):
+                    response_content += "\n\n---\n\n**Отлично!** Напиши «Дальше» когда будешь готов к следующему блоку."
+                # If not all answered, the "Осталось ответить" is already in response from process_user_answer
 
     elif mode == "architect":
         # Architect mode - generate implementation plan
@@ -338,6 +416,7 @@ def process_chat_message(user_id: str, mode: str, message: str) -> dict:
 def get_chat_status(user_id: str) -> dict:
     """Get status info for chat UI header and sidebar."""
     progress = get_user_progress(user_id)
+    seen_welcome = has_seen_welcome(user_id)
 
     client = get_client()
 
@@ -426,6 +505,7 @@ def get_chat_status(user_id: str) -> dict:
 
     return {
         "progress": progress,
+        "seen_welcome": seen_welcome,
         "message_counts": {
             "ask": ask_count,
             "study": study_count,

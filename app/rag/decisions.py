@@ -16,6 +16,33 @@ def get_all_active_decisions(user_id: str) -> list[dict]:
     return result.data or []
 
 
+def get_user_decisions_list(user_id: str, limit: int = 50) -> list[dict]:
+    """Get list of user decisions for display in UI.
+
+    Returns simplified list with only display-relevant fields.
+    """
+    client = get_client()
+    result = client.table("company_memory") \
+        .select("id, related_topic, user_decision_normalized, user_decision_raw, created_at, related_module") \
+        .eq("user_id", user_id) \
+        .eq("status", "active") \
+        .eq("memory_type", "decision") \
+        .order("created_at", desc=True) \
+        .limit(limit) \
+        .execute()
+
+    decisions = []
+    for d in (result.data or []):
+        decisions.append({
+            "id": str(d["id"]),
+            "topic": d.get("related_topic") or "Без темы",
+            "decision": d.get("user_decision_normalized") or d.get("user_decision_raw") or "",
+            "created_at": d["created_at"],
+            "module": d.get("related_module")
+        })
+    return decisions
+
+
 def group_decisions_by_module(decisions: list[dict]) -> dict:
     """Group decisions by module and topic."""
     grouped = {}

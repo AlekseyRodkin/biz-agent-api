@@ -49,13 +49,25 @@ STUDY_SYSTEM_PROMPT = """Ты — обучающий AI-агент "Трансф
 - Риск: почему это может быть проблемой
 (Если расхождений нет — напиши "Расхождений не обнаружено")
 
-[ВОПРОС К ТЕБЕ]
-Как ты решил реализовать это в своей компании?
+[ВОПРОСЫ К ТЕБЕ]
+Задай 2-3 конкретных вопроса, требующих ответа от пользователя.
+Каждый вопрос должен помогать пользователю принять решение для своей компании.
 
 [СЛЕДУЮЩИЙ ШАГ]
 Что нужно сделать/описать до следующего блока
 
 SOURCES_USED: [список chunk_id]
+
+В самом конце ответа ОБЯЗАТЕЛЬНО добавь структурированный блок вопросов:
+
+<pending_questions>
+[
+  {"id": "q1", "text": "Первый конкретный вопрос?"},
+  {"id": "q2", "text": "Второй конкретный вопрос?"}
+]
+</pending_questions>
+
+Максимум 3 вопроса. Каждый вопрос должен требовать конкретного ответа.
 """
 
 ANSWER_SYSTEM_PROMPT = """Ты — обучающий AI-агент. Пользователь ответил на вопрос о решении для своей компании.
@@ -63,8 +75,9 @@ ANSWER_SYSTEM_PROMPT = """Ты — обучающий AI-агент. Польз�
 Твоя задача:
 1. Подтвердить решение или предложить уточнения
 2. Если решение конкретное — сформировать запись для памяти
+3. Проанализировать, на какие вопросы из PENDING_QUESTIONS пользователь ответил
 
-Если пользователь дал конкретное решение, ДОБАВЬ в конце ответа:
+Если пользователь дал конкретное решение, ДОБАВЬ:
 
 <memory_write>
 {
@@ -79,7 +92,21 @@ ANSWER_SYSTEM_PROMPT = """Ты — обучающий AI-агент. Польз�
 }
 </memory_write>
 
-Если пользователь не дал конкретного решения — не добавляй memory_write.
+ОБЯЗАТЕЛЬНО в конце ответа добавь анализ вопросов:
+
+<questions_analysis>
+{
+  "answered": ["q1"],
+  "remaining": ["q2", "q3"],
+  "all_answered": false
+}
+</questions_analysis>
+
+- "answered" — ID вопросов, на которые пользователь дал конкретный ответ
+- "remaining" — ID вопросов, оставшихся без ответа
+- "all_answered" — true если все вопросы закрыты
+
+Если PENDING_QUESTIONS пустой — ставь all_answered: true и пустые массивы.
 """
 
 
@@ -88,6 +115,98 @@ def get_user_progress(user_id: str) -> dict | None:
     client = get_client()
     result = client.table("user_progress").select("*").eq("user_id", user_id).execute()
     return result.data[0] if result.data else None
+
+
+# ============================================================================
+# Pending Questions Management
+# ============================================================================
+
+def parse_pending_questions(text: str) -> list[dict]:
+    """Parse <pending_questions> block. Returns [] on any error (never blocks learning)."""
+    try:
+        match = re.search(r'<pending_questions>\s*(\[.*?\])\s*</pending_questions>', text, re.DOTALL)
+        if not match:
+            return []  # No block = no questions (OK)
+        questions = json.loads(match.group(1))
+        # Validate structure and add answered=False
+        return [
+            {"id": q["id"], "text": q["text"], "answered": False}
+            for q in questions
+            if isinstance(q, dict) and "id" in q and "text" in q
+        ]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return []  # Parse error = continue without questions (don't block)
+
+
+def parse_questions_analysis(text: str) -> dict | None:
+    """Parse <questions_analysis> block from answer response."""
+    try:
+        match = re.search(r'<questions_analysis>\s*({.*?})\s*</questions_analysis>', text, re.DOTALL)
+        if not match:
+            return None
+        return json.loads(match.group(1))
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
+def save_pending_questions(user_id: str, questions: list[dict]) -> None:
+    """Save pending questions to user_progress."""
+    client = get_client()
+    client.table("user_progress").update({
+        "pending_questions": questions
+    }).eq("user_id", user_id).execute()
+
+
+def get_pending_questions(user_id: str) -> list[dict]:
+    """Get pending questions for user."""
+    client = get_client()
+    result = client.table("user_progress").select("pending_questions").eq("user_id", user_id).execute()
+    if result.data and result.data[0].get("pending_questions"):
+        return result.data[0]["pending_questions"]
+    return []
+
+
+def mark_questions_answered(user_id: str, answered_ids: list[str]) -> list[dict]:
+    """Mark specific questions as answered. Returns remaining unanswered."""
+    questions = get_pending_questions(user_id)
+    for q in questions:
+        if q["id"] in answered_ids:
+            q["answered"] = True
+
+    # Save updated questions
+    save_pending_questions(user_id, questions)
+
+    # Return unanswered
+    return [q for q in questions if not q.get("answered", False)]
+
+
+def clear_pending_questions(user_id: str) -> None:
+    """Clear all pending questions (when moving to next block)."""
+    save_pending_questions(user_id, [])
+
+
+def skip_question(user_id: str, query: str) -> tuple[list[dict], list[str]]:
+    """
+    Skip question(s) by ID or partial text match.
+    Returns (remaining_questions, skipped_texts).
+    """
+    questions = get_pending_questions(user_id)
+    skipped_ids = []
+    skipped_texts = []
+
+    query_lower = query.lower().strip()
+
+    for q in questions:
+        # Match by ID (e.g., "q1") or by partial text
+        if q["id"].lower() == query_lower or query_lower in q["text"].lower():
+            skipped_ids.append(q["id"])
+            skipped_texts.append(q["text"])
+
+    if skipped_ids:
+        remaining = mark_questions_answered(user_id, skipped_ids)
+        return remaining, skipped_texts
+
+    return [q for q in questions if not q.get("answered", False)], []
 
 
 def reset_progress(user_id: str) -> dict:
@@ -300,6 +419,9 @@ def study_next(user_id: str) -> dict:
     if not progress:
         progress = reset_progress(user_id)
 
+    # Clear previous pending questions when moving to next block
+    clear_pending_questions(user_id)
+
     chunks = get_next_methodology_chunks(progress)
 
     if not chunks:
@@ -307,7 +429,8 @@ def study_next(user_id: str) -> dict:
             "answer": "Поздравляю! Вы прошли все доступные материалы курса.",
             "sources": {"methodology": [], "memory": [], "cases": [], "conflicts": []},
             "progress": progress,
-            "completed": True
+            "completed": True,
+            "pending_questions": []
         }
 
     # Compute embedding for the block
@@ -333,6 +456,14 @@ def study_next(user_id: str) -> dict:
 
     answer = chat_completion(messages)
 
+    # Parse and save pending questions (with fallback - never blocks learning)
+    pending = parse_pending_questions(answer)
+    if pending:
+        save_pending_questions(user_id, pending)
+
+    # Remove <pending_questions> block from visible response
+    clean_answer = re.sub(r'<pending_questions>.*?</pending_questions>', '', answer, flags=re.DOTALL).strip()
+
     # Update progress
     last_chunk = chunks[-1]
     update_progress(user_id, last_chunk["lecture_id"], last_chunk["sequence_order"])
@@ -340,10 +471,10 @@ def study_next(user_id: str) -> dict:
     # Add navigation block to answer
     navigation = build_navigation_block(user_id)
     if navigation:
-        answer = f"{answer}\n\n{navigation}"
+        clean_answer = f"{clean_answer}\n\n{navigation}"
 
     return {
-        "answer": answer,
+        "answer": clean_answer,
         "sources": {
             "methodology": [{"chunk_id": c["chunk_id"], "lecture_id": c["lecture_id"], "lecture_title": c.get("lecture_title", "")} for c in chunks],
             "memory": [{"id": str(m.get("id", "")), "topic": m.get("related_topic", "")} for m in memory],
@@ -351,7 +482,8 @@ def study_next(user_id: str) -> dict:
             "conflicts": [{"decision_id": c["decision_id"], "topic": c["topic"]} for c in conflicts]
         },
         "progress": get_user_progress(user_id),
-        "completed": False
+        "completed": False,
+        "pending_questions": pending
     }
 
 
@@ -396,13 +528,21 @@ def save_memory(user_id: str, memory_data: dict) -> str:
 def process_user_answer(user_id: str, answer: str, context: dict) -> dict:
     """Process user answer and potentially save to memory."""
     progress = get_user_progress(user_id)
-    
+
     # Get current lecture info for context
     lecture_id = progress.get("current_lecture_id", "") if progress else ""
     module = progress.get("current_module", 1) if progress else 1
     day = progress.get("current_day", 1) if progress else 1
-    
+
+    # Get pending questions to pass to LLM
+    pending = get_pending_questions(user_id)
+
     # Build context for answer processing
+    pending_str = ""
+    if pending:
+        pending_json = json.dumps(pending, ensure_ascii=False)
+        pending_str = f"\n\nPENDING_QUESTIONS:\n{pending_json}"
+
     context_str = f"""
 Лекция: {lecture_id}
 Модуль: {module}, День: {day}
@@ -410,20 +550,21 @@ def process_user_answer(user_id: str, answer: str, context: dict) -> dict:
 Вопрос агента: {context.get('question', 'Как ты решил реализовать это в своей компании?')}
 
 Ответ пользователя:
-{answer}
+{answer}{pending_str}
 """
-    
+
     messages = [
         {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
         {"role": "user", "content": context_str}
     ]
-    
+
     response = chat_completion(messages)
-    
+
     # Parse and save memory if present
     memory_data = parse_memory_write(response)
     memory_id = None
-    
+    decision_summary = None
+
     if memory_data:
         # Add lecture context if not present
         if not memory_data.get("related_lecture_id"):
@@ -432,14 +573,36 @@ def process_user_answer(user_id: str, answer: str, context: dict) -> dict:
             memory_data["related_module"] = module
         if not memory_data.get("related_day"):
             memory_data["related_day"] = day
-        
+
         memory_id = save_memory(user_id, memory_data)
-    
-    # Remove memory_write block from visible response
-    clean_response = re.sub(r'<memory_write>.*?</memory_write>', '', response, flags=re.DOTALL).strip()
-    
+        decision_summary = (memory_data.get("user_decision_normalized") or "")[:100]
+
+    # Parse questions analysis and mark answered
+    analysis = parse_questions_analysis(response)
+    remaining = []
+
+    if analysis:
+        answered_ids = analysis.get("answered", [])
+        if answered_ids:
+            remaining = mark_questions_answered(user_id, answered_ids)
+    else:
+        # If no analysis, keep current pending questions
+        remaining = [q for q in pending if not q.get("answered", False)]
+
+    # Remove XML blocks from visible response
+    clean_response = re.sub(r'<memory_write>.*?</memory_write>', '', response, flags=re.DOTALL)
+    clean_response = re.sub(r'<questions_analysis>.*?</questions_analysis>', '', clean_response, flags=re.DOTALL).strip()
+
+    # Add remaining questions hint if any
+    if remaining:
+        remaining_texts = [q["text"] for q in remaining]
+        clean_response += f"\n\n**Осталось ответить:** {'; '.join(remaining_texts)}"
+
     return {
         "answer": clean_response,
         "memory_saved": memory_id is not None,
-        "memory_id": memory_id
+        "memory_id": memory_id,
+        "decision_summary": decision_summary,
+        "pending_questions": remaining,
+        "all_answered": len(remaining) == 0
     }

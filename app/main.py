@@ -17,7 +17,7 @@ logging.basicConfig(
 
 from app.rag.ask import ask as rag_ask
 from app.rag.study import study_next, reset_progress, process_user_answer, get_user_progress
-from app.rag.decisions import decisions_review, refine_decision
+from app.rag.decisions import decisions_review, refine_decision, get_user_decisions_list
 from app.rag.course_map import get_course_map, get_course_progress
 from app.rag.module_review import module_review, save_module_summary, check_module_completion
 from app.rag.architect_session import architect_session, save_architect_plan
@@ -32,7 +32,7 @@ from app.rag.metrics import (
 )
 from app.rag.dashboard import executive_dashboard
 from app.rag.exports import export_decisions, export_actions, export_metrics, export_plans
-from app.rag.chat import get_history, process_chat_message, get_chat_status, ensure_study_welcome
+from app.rag.chat import get_history, process_chat_message, get_chat_status, ensure_study_welcome, mark_welcome_seen
 from app.rag.search import search as rag_search
 from app.rag.guardrails import (
     GuardrailError, SCHEMA_VERSION,
@@ -47,7 +47,7 @@ from app.llm.deepseek_client import LLMError
 app = FastAPI(
     title="Biz Agent API",
     description="Business Agent API backend service",
-    version="2.8.3"
+    version="2.9.0"
 )
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web", "static")
@@ -354,6 +354,16 @@ async def decisions_refine_endpoint(request: RefineRequest):
         return result
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/me/decisions")
+async def get_my_decisions_endpoint(_: str = Depends(require_session)):
+    """Get current user's decisions list for UI display. Requires session."""
+    try:
+        decisions = get_user_decisions_list(USER_ID)
+        return {"total": len(decisions), "decisions": decisions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -923,6 +933,16 @@ async def chat_status_endpoint(_: str = Depends(require_session)):
     try:
         status = get_chat_status(USER_ID)
         return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/welcome/seen")
+async def mark_welcome_seen_endpoint(_: str = Depends(require_session)):
+    """Mark that user has seen welcome screen. Requires session."""
+    try:
+        mark_welcome_seen(USER_ID)
+        return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
